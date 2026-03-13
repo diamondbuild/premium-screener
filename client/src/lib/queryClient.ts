@@ -1,6 +1,13 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-export const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+// After deploy, __PORT_5000__ becomes "port/5000" (relative). Ensure it's
+// an absolute path so fetch resolves against the origin, not the deep proxy URL.
+const _raw = "__PORT_5000__";
+export const API_BASE = _raw.startsWith("__")
+  ? ""
+  : _raw.startsWith("/")
+    ? _raw
+    : `/${_raw}`;
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
