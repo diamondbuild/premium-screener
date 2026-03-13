@@ -1,5 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { setupAuth } from "./auth";
+import { setupStripe } from "./stripe";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -60,6 +62,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Auth must be set up before routes so session middleware is available
+  setupAuth(app);
+  setupStripe(app);
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

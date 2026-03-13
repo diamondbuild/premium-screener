@@ -51,6 +51,8 @@ import {
 import { Link } from "wouter";
 import type { StrategyTrade, StrategyTradeWithEarnings, OptionLeg, StrategyType, ScanStatus, ScanRecord, WatchlistItem, Alert, BacktestResult, BacktestRequest, InsertJournalEntry } from "@shared/schema";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/hooks/use-auth";
+import { UpgradeBanner, RedactedValue, UserMenu } from "@/components/UpgradeBanner";
 import { Label } from "@/components/ui/label";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, Tooltip as RechartsTooltip } from "recharts";
 import { Crosshair, BarChart2, PieChart } from "lucide-react";
@@ -1680,6 +1682,7 @@ export default function Dashboard() {
               {isScanning ? `${scanStatus?.progress || 0}%` : "Rescan"}
             </Button>
             <ThemeToggle />
+            <UserMenu />
           </div>
         </div>
 
@@ -1704,6 +1707,8 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-5 space-y-5">
+
+        <UpgradeBanner />
 
         {/* Watchlist Panel (collapsible) */}
         {showWatchlist && (

@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import db from "./db";
@@ -6,8 +6,47 @@ import { runFullScan, getSP500Tickers } from "./scanner";
 import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey } from "./backtester";
 import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings } from "./earnings";
 import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
+import { requireAuth, requireSubscription, checkSubscription } from "./auth";
 import type { StrategyTrade, OptionLeg, StrategyType, InsertWatchlistItem } from "@shared/schema";
 import { insertWatchlistSchema, backtestRequestSchema, insertJournalEntrySchema, closeJournalEntrySchema } from "@shared/schema";
+
+// ── Free tier limits ──
+const FREE_RESULTS_LIMIT = 5; // Free users see top 5 trades only
+const FREE_DELAY_HOURS = 1;   // Free users see data delayed by 1 hour
+
+// Redact detailed fields for free tier users
+function redactTradeForFree(trade: StrategyTrade): StrategyTrade & { redacted: boolean } {
+  return {
+    ...trade,
+    // Keep: ticker, strategy type, composite score, expiration, DTE, probability
+    // Redact: legs details, exact Greeks, exact premium amounts
+    legs: trade.legs.map(leg => ({
+      ...leg,
+      bid: 0,
+      ask: 0,
+      midpoint: 0,
+      gamma: 0,
+      theta: 0,
+      vega: 0,
+    })),
+    netCredit: 0,
+    maxProfit: 0,
+    maxLoss: 0,
+    premiumPerDay: 0,
+    netTheta: 0,
+    netVega: 0,
+    breakEvenLow: null,
+    breakEvenHigh: null,
+    redacted: true,
+  };
+}
+
+function isDelayedDataFresh(lastUpdated: string | null): boolean {
+  if (!lastUpdated) return false;
+  const scanTime = new Date(lastUpdated).getTime();
+  const delayThreshold = Date.now() - FREE_DELAY_HOURS * 60 * 60 * 1000;
+  return scanTime <= delayThreshold;
+}
 
 // Live scanning uses the external-tool CLI for Polygon/Massive API access.
 // Set LIVE_SCAN=1 to enable on startup. The Rescan button always tries live first.
@@ -373,8 +412,9 @@ export async function registerRoutes(
   }
 
   // GET /api/top-picks
-  app.get("/api/top-picks", async (req, res) => {
+  app.get("/api/top-picks", checkSubscription, async (req, res) => {
     try {
+      const isPremium = (req as any).isPremium;
       const strategyType = (req.query.strategy as string) || "all";
       const topN = parseInt(req.query.topN as string) || 5;
       const excludeEarnings = req.query.excludeEarnings === "1";
@@ -385,15 +425,22 @@ export async function registerRoutes(
         picks = picks.filter((t: any) => !t.hasEarningsBeforeExpiry);
         picks = picks.slice(0, topN);
       }
-      res.json({ picks });
+
+      if (!isPremium) {
+        // Free: show top 3, redact details
+        picks = picks.slice(0, 3).map(redactTradeForFree) as any;
+      }
+
+      res.json({ picks, isPremium });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch top picks" });
     }
   });
 
   // GET /api/all-results
-  app.get("/api/all-results", async (req, res) => {
+  app.get("/api/all-results", checkSubscription, async (req, res) => {
     try {
+      const isPremium = (req as any).isPremium;
       const scanId = req.query.scanId ? parseInt(req.query.scanId as string) : undefined;
       const excludeEarnings = req.query.excludeEarnings === "1";
       let results = await storage.getAllResults(scanId);
@@ -403,7 +450,14 @@ export async function registerRoutes(
       if (excludeEarnings) {
         results = results.filter((t: any) => !t.hasEarningsBeforeExpiry);
       }
-      res.json({ results, total: results.length, totalBeforeFilter });
+
+      const totalAll = results.length;
+      if (!isPremium) {
+        // Free: limited results, redacted
+        results = results.slice(0, FREE_RESULTS_LIMIT).map(redactTradeForFree) as any;
+      }
+
+      res.json({ results, total: results.length, totalBeforeFilter, totalAll, isPremium });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch results" });
     }
@@ -414,8 +468,8 @@ export async function registerRoutes(
     res.json(storage.getScanStatus());
   });
 
-  // POST /api/scan
-  app.post("/api/scan", async (_req, res) => {
+  // POST /api/scan — premium only (free users can't trigger scans)
+  app.post("/api/scan", requireSubscription, async (_req, res) => {
     const status = storage.getScanStatus();
     if (status.status === "scanning") {
       return res.status(409).json({ error: "Scan already in progress" });
@@ -493,8 +547,8 @@ export async function registerRoutes(
     }
   });
 
-  // ── Watchlist routes ──
-  app.get("/api/watchlist", (_req, res) => {
+  // ── Watchlist routes (premium only) ──
+  app.get("/api/watchlist", requireSubscription, (_req, res) => {
     try {
       const items = storage.getWatchlist();
       res.json({ watchlist: items });
@@ -503,7 +557,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/watchlist", (req, res) => {
+  app.post("/api/watchlist", requireSubscription, (req, res) => {
     try {
       const parsed = insertWatchlistSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -519,7 +573,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/watchlist/:id", (req, res) => {
+  app.patch("/api/watchlist/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -531,7 +585,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/watchlist/:id", (req, res) => {
+  app.delete("/api/watchlist/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -543,8 +597,8 @@ export async function registerRoutes(
     }
   });
 
-  // ── Alert routes ──
-  app.get("/api/alerts", (req, res) => {
+  // ── Alert routes (premium only) ──
+  app.get("/api/alerts", requireSubscription, (req, res) => {
     try {
       const unseenOnly = req.query.unseen === "1";
       const limit = parseInt(req.query.limit as string) || 50;
@@ -556,7 +610,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts/mark-seen", (req, res) => {
+  app.post("/api/alerts/mark-seen", requireSubscription, (req, res) => {
     try {
       const { alertIds } = req.body || {};
       storage.markAlertsSeen(alertIds);
@@ -566,7 +620,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/alerts/:id", (req, res) => {
+  app.delete("/api/alerts/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -645,8 +699,8 @@ export async function registerRoutes(
     }
   });
 
-  // ── Backtest routes ──
-  app.post("/api/backtest", (req, res) => {
+  // ── Backtest routes (premium only) ──
+  app.post("/api/backtest", requireSubscription, (req, res) => {
     try {
       const parsed = backtestRequestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -672,10 +726,10 @@ export async function registerRoutes(
     }
   });
 
-  // ── Trade Journal ──
+  // ── Trade Journal (premium only) ──
 
   // GET /api/journal - List entries
-  app.get("/api/journal", (req, res) => {
+  app.get("/api/journal", requireSubscription, (req, res) => {
     try {
       const status = (req.query.status as string) || undefined;
       const entries = storage.getJournalEntries(status);
@@ -686,7 +740,7 @@ export async function registerRoutes(
   });
 
   // GET /api/journal/stats - Performance stats
-  app.get("/api/journal/stats", (_req, res) => {
+  app.get("/api/journal/stats", requireSubscription, (_req, res) => {
     try {
       const stats = storage.getJournalStats();
       res.json(stats);
@@ -696,7 +750,7 @@ export async function registerRoutes(
   });
 
   // GET /api/journal/greeks - Portfolio-level greeks for open positions
-  app.get("/api/journal/greeks", (_req, res) => {
+  app.get("/api/journal/greeks", requireSubscription, (_req, res) => {
     try {
       const greeks = storage.getPortfolioGreeks();
       res.json(greeks);
@@ -706,7 +760,7 @@ export async function registerRoutes(
   });
 
   // GET /api/journal/logged-ids - Get scan trade IDs that are already logged
-  app.get("/api/journal/logged-ids", (_req, res) => {
+  app.get("/api/journal/logged-ids", requireSubscription, (_req, res) => {
     try {
       const ids = storage.getLoggedTradeIds();
       res.json({ ids });
@@ -716,7 +770,7 @@ export async function registerRoutes(
   });
 
   // GET /api/journal/:id - Single entry
-  app.get("/api/journal/:id", (req, res) => {
+  app.get("/api/journal/:id", requireSubscription, (req, res) => {
     try {
       const entry = storage.getJournalEntry(parseInt(req.params.id));
       if (!entry) return res.status(404).json({ error: "Entry not found" });
@@ -727,7 +781,7 @@ export async function registerRoutes(
   });
 
   // POST /api/journal - Add entry
-  app.post("/api/journal", (req, res) => {
+  app.post("/api/journal", requireSubscription, (req, res) => {
     try {
       const parsed = insertJournalEntrySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -741,7 +795,7 @@ export async function registerRoutes(
   });
 
   // PUT /api/journal/:id/close - Close/settle a position
-  app.put("/api/journal/:id/close", (req, res) => {
+  app.put("/api/journal/:id/close", requireSubscription, (req, res) => {
     try {
       const parsed = closeJournalEntrySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -756,7 +810,7 @@ export async function registerRoutes(
   });
 
   // PUT /api/journal/:id/entry - Update fill price and contracts
-  app.put("/api/journal/:id/entry", (req, res) => {
+  app.put("/api/journal/:id/entry", requireSubscription, (req, res) => {
     try {
       const { entryCredit, contracts } = req.body;
       const updates: { entryCredit?: number; contracts?: number } = {};
@@ -772,7 +826,7 @@ export async function registerRoutes(
   });
 
   // PUT /api/journal/:id/notes - Update notes/tags
-  app.put("/api/journal/:id/notes", (req, res) => {
+  app.put("/api/journal/:id/notes", requireSubscription, (req, res) => {
     try {
       const { notes, tags } = req.body;
       const entry = storage.updateJournalNotes(parseInt(req.params.id), notes, tags);
@@ -784,7 +838,7 @@ export async function registerRoutes(
   });
 
   // DELETE /api/journal/:id
-  app.delete("/api/journal/:id", (req, res) => {
+  app.delete("/api/journal/:id", requireSubscription, (req, res) => {
     try {
       const deleted = storage.deleteJournalEntry(parseInt(req.params.id));
       if (!deleted) return res.status(404).json({ error: "Entry not found" });
