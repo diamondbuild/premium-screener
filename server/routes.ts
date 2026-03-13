@@ -18,25 +18,31 @@ const FREE_DELAY_HOURS = 1;   // Free users see data delayed by 1 hour
 function redactTradeForFree(trade: StrategyTrade): StrategyTrade & { redacted: boolean } {
   return {
     ...trade,
-    // Keep: ticker, strategy type, composite score, expiration, DTE, probability
-    // Redact: legs details, exact Greeks, exact premium amounts
+    // Keep: ticker, strategy type, composite score, DTE, probability, annualizedROC
+    // Redact: legs details, strikes, exact Greeks, exact premium amounts, expiration
+    expirationDate: "Premium",
     legs: trade.legs.map(leg => ({
       ...leg,
+      strike: 0,
       bid: 0,
       ask: 0,
       midpoint: 0,
+      iv: 0,
+      delta: 0,
       gamma: 0,
       theta: 0,
       vega: 0,
     })),
-    netCredit: 0,
-    maxProfit: 0,
-    maxLoss: 0,
-    premiumPerDay: 0,
+    netCredit: -1,
+    maxProfit: -1,
+    maxLoss: -1,
+    premiumPerDay: -1,
+    netDelta: 0,
     netTheta: 0,
     netVega: 0,
     breakEvenLow: null,
     breakEvenHigh: null,
+    spreadWidth: null,
     redacted: true,
   };
 }
