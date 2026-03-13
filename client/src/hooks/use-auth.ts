@@ -1,5 +1,11 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiRequest, queryClient, API_BASE } from "@/lib/queryClient";
+import { useState, useEffect, useCallback } from "react";
+import {
+  apiRequest,
+  queryClient,
+  API_BASE,
+  setAuthToken,
+  getAuthToken,
+} from "@/lib/queryClient";
 
 export interface AuthUser {
   id: number;
@@ -14,8 +20,15 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   isPremium: boolean;
-  login: (email: string, password: string) => Promise<{ error?: string }>;
-  register: (email: string, password: string, displayName?: string) => Promise<{ error?: string }>;
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ error?: string }>;
+  register: (
+    email: string,
+    password: string,
+    displayName?: string
+  ) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   startCheckout: () => Promise<void>;
@@ -26,30 +39,41 @@ let cachedUser: AuthUser | null = null;
 let listeners: Set<() => void> = new Set();
 
 function notifyListeners() {
-  listeners.forEach(fn => fn());
+  listeners.forEach((fn) => fn());
 }
 
 export function useAuth(): AuthState {
   const [user, setUser] = useState<AuthUser | null>(cachedUser);
-  const [loading, setLoading] = useState(cachedUser === null);
+  const [loading, setLoading] = useState(cachedUser === null && getAuthToken() !== null);
 
   // Subscribe to auth state changes
   useEffect(() => {
     const listener = () => setUser(cachedUser);
     listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    return () => {
+      listeners.delete(listener);
+    };
   }, []);
 
-  // Initial fetch
+  // Initial fetch — only if we have a token (from a previous login in this session)
   useEffect(() => {
     if (cachedUser !== null) {
       setLoading(false);
       return;
     }
-    fetch(`${API_BASE}/api/auth/me`, { credentials: "include" })
-      .then(r => r.json())
-      .then(data => {
+    // No token means no session — go straight to auth page
+    if (!getAuthToken()) {
+      setLoading(false);
+      return;
+    }
+    // We have a token, verify it
+    fetch(`${API_BASE}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${getAuthToken()}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
         cachedUser = data.user || null;
+        if (!data.user) setAuthToken(null); // token was invalid
         setUser(cachedUser);
         setLoading(false);
         notifyListeners();
@@ -59,56 +83,65 @@ export function useAuth(): AuthState {
       });
   }, []);
 
-  const isPremium = user?.subscriptionStatus === "active" || user?.subscriptionStatus === "past_due";
+  const isPremium =
+    user?.subscriptionStatus === "active" ||
+    user?.subscriptionStatus === "past_due";
 
-  const login = useCallback(async (email: string, password: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (res.ok && data.user) {
-        cachedUser = data.user;
-        setUser(cachedUser);
-        notifyListeners();
-        queryClient.invalidateQueries();
-        return {};
+  const login = useCallback(
+    async (email: string, password: string) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (res.ok && data.user && data.token) {
+          setAuthToken(data.token);
+          cachedUser = data.user;
+          setUser(cachedUser);
+          notifyListeners();
+          queryClient.invalidateQueries();
+          return {};
+        }
+        return { error: data.error || "Invalid email or password" };
+      } catch (err: any) {
+        return { error: "Network error. Please try again." };
       }
-      return { error: data.error || "Invalid email or password" };
-    } catch (err: any) {
-      return { error: "Network error. Please try again." };
-    }
-  }, []);
+    },
+    []
+  );
 
-  const register = useCallback(async (email: string, password: string, displayName?: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (res.ok && data.user) {
-        cachedUser = data.user;
-        setUser(cachedUser);
-        notifyListeners();
-        queryClient.invalidateQueries();
-        return {};
+  const register = useCallback(
+    async (email: string, password: string, displayName?: string) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, displayName }),
+        });
+        const data = await res.json();
+        if (res.ok && data.user && data.token) {
+          setAuthToken(data.token);
+          cachedUser = data.user;
+          setUser(cachedUser);
+          notifyListeners();
+          queryClient.invalidateQueries();
+          return {};
+        }
+        return { error: data.error || "Registration failed" };
+      } catch (err: any) {
+        return { error: "Network error. Please try again." };
       }
-      return { error: data.error || "Registration failed" };
-    } catch (err: any) {
-      return { error: "Network error. Please try again." };
-    }
-  }, []);
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     try {
       await apiRequest("POST", "/api/auth/logout");
     } catch {}
+    setAuthToken(null);
     cachedUser = null;
     setUser(null);
     notifyListeners();
@@ -116,10 +149,15 @@ export function useAuth(): AuthState {
   }, []);
 
   const refresh = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       cachedUser = data.user || null;
+      if (!data.user) setAuthToken(null);
       setUser(cachedUser);
       notifyListeners();
     } catch {}

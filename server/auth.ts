@@ -1,8 +1,5 @@
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
-import session from "express-session";
-import createMemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import db from "./db";
 import type { Express, Request, Response, NextFunction } from "express";
 
@@ -18,23 +15,6 @@ export interface User {
   stripePriceId: string | null;
   subscriptionEndsAt: string | null;
   createdAt: string;
-}
-
-declare global {
-  namespace Express {
-    interface User {
-      id: number;
-      email: string;
-      passwordHash: string;
-      displayName: string | null;
-      subscriptionStatus: "free" | "active" | "past_due" | "canceled";
-      stripeCustomerId: string | null;
-      stripeSubscriptionId: string | null;
-      stripePriceId: string | null;
-      subscriptionEndsAt: string | null;
-      createdAt: string;
-    }
-  }
 }
 
 // ── DB Setup ──
@@ -58,19 +38,21 @@ db.exec(`
 // ── Prepared Statements ──
 const findUserByEmail = db.prepare(`SELECT * FROM users WHERE email = ?`);
 const findUserById = db.prepare(`SELECT * FROM users WHERE id = ?`);
-const insertUser = db.prepare(`
-  INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)
-`);
-const updateStripeCustomer = db.prepare(`
-  UPDATE users SET stripe_customer_id = ? WHERE id = ?
-`);
-const updateSubscription = db.prepare(`
-  UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, stripe_price_id = ?, subscription_ends_at = ? WHERE id = ?
-`);
-const updateSubscriptionByCustomerId = db.prepare(`
-  UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, stripe_price_id = ?, subscription_ends_at = ? WHERE stripe_customer_id = ?
-`);
-const findUserByStripeCustomer = db.prepare(`SELECT * FROM users WHERE stripe_customer_id = ?`);
+const insertUser = db.prepare(
+  `INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)`
+);
+const updateStripeCustomer = db.prepare(
+  `UPDATE users SET stripe_customer_id = ? WHERE id = ?`
+);
+const updateSubscription = db.prepare(
+  `UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, stripe_price_id = ?, subscription_ends_at = ? WHERE id = ?`
+);
+const updateSubscriptionByCustomerId = db.prepare(
+  `UPDATE users SET subscription_status = ?, stripe_subscription_id = ?, stripe_price_id = ?, subscription_ends_at = ? WHERE stripe_customer_id = ?`
+);
+const findUserByStripeCustomer = db.prepare(
+  `SELECT * FROM users WHERE stripe_customer_id = ?`
+);
 
 function rowToUser(row: any): User | null {
   if (!row) return null;
@@ -101,7 +83,11 @@ export function getUserByStripeCustomerId(customerId: string): User | null {
   return rowToUser(findUserByStripeCustomer.get(customerId));
 }
 
-export function createUser(email: string, password: string, displayName?: string): User {
+export function createUser(
+  email: string,
+  password: string,
+  displayName?: string
+): User {
   const hash = bcrypt.hashSync(password, 10);
   const result = insertUser.run(email, hash, displayName || null);
   return getUserById(result.lastInsertRowid as number)!;
@@ -128,120 +114,56 @@ export function updateUserSubscriptionByCustomerId(
   priceId: string | null,
   endsAt: string | null
 ) {
-  updateSubscriptionByCustomerId.run(status, subscriptionId, priceId, endsAt, customerId);
+  updateSubscriptionByCustomerId.run(
+    status,
+    subscriptionId,
+    priceId,
+    endsAt,
+    customerId
+  );
 }
 
-// ── Passport Config ──
-passport.use(
-  new LocalStrategy(
-    { usernameField: "email", passwordField: "password" },
-    (email, password, done) => {
-      const user = getUserByEmail(email);
-      if (!user) return done(null, false, { message: "Invalid email or password" });
-      if (!bcrypt.compareSync(password, user.passwordHash)) {
-        return done(null, false, { message: "Invalid email or password" });
-      }
-      return done(null, user);
-    }
-  )
-);
+// ── Token Store (in-memory) ──
+// Maps token string → userId. Cookies/sessions don't work in sandboxed iframes,
+// so we use Bearer tokens held in the client's React state.
+const tokenStore = new Map<string, { userId: number; createdAt: number }>();
 
-passport.serializeUser((user: Express.User, done) => {
-  done(null, user.id);
-});
+// Clean up tokens older than 30 days every hour
+setInterval(() => {
+  const maxAge = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (const [token, data] of tokenStore) {
+    if (now - data.createdAt > maxAge) tokenStore.delete(token);
+  }
+}, 60 * 60 * 1000);
 
-passport.deserializeUser((id: number, done) => {
-  const user = getUserById(id);
-  done(null, user || undefined);
-});
+function generateToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
 
-// ── Session + Passport Setup ──
-export function setupAuth(app: Express) {
-  const MemoryStore = createMemoryStore(session);
+function createToken(userId: number): string {
+  const token = generateToken();
+  tokenStore.set(token, { userId, createdAt: Date.now() });
+  return token;
+}
 
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "premium-screener-dev-secret-change-in-prod",
-      resave: false,
-      saveUninitialized: false,
-      store: new MemoryStore({ checkPeriod: 86400000 }), // prune expired entries every 24h
-      cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-        httpOnly: true,
-        sameSite: "lax",
-        secure: false, // Set to true in production with HTTPS
-      },
-    })
-  );
+function getUserFromToken(token: string): User | null {
+  const data = tokenStore.get(token);
+  if (!data) return null;
+  return getUserById(data.userId);
+}
 
-  app.use(passport.initialize());
-  app.use(passport.session());
+function revokeToken(token: string) {
+  tokenStore.delete(token);
+}
 
-  // ── Auth Routes ──
-
-  // POST /api/auth/register
-  app.post("/api/auth/register", (req: Request, res: Response, next: NextFunction) => {
-    const { email, password, displayName } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-    if (password.length < 8) {
-      return res.status(400).json({ error: "Password must be at least 8 characters" });
-    }
-
-    const existing = getUserByEmail(email);
-    if (existing) {
-      return res.status(409).json({ error: "An account with this email already exists" });
-    }
-
-    try {
-      const user = createUser(email, password, displayName);
-
-      // Auto-login after registration
-      req.login(user, (err) => {
-        if (err) return next(err);
-        res.status(201).json({
-          user: sanitizeUser(user),
-        });
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: "Failed to create account" });
-    }
-  });
-
-  // POST /api/auth/login
-  app.post("/api/auth/login", (req: Request, res: Response, next: NextFunction) => {
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
-      if (err) return next(err);
-      if (!user) {
-        return res.status(401).json({ error: info?.message || "Invalid credentials" });
-      }
-      req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        res.json({ user: sanitizeUser(user) });
-      });
-    })(req, res, next);
-  });
-
-  // POST /api/auth/logout
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
-    req.logout((err) => {
-      if (err) return res.status(500).json({ error: "Logout failed" });
-      res.json({ success: true });
-    });
-  });
-
-  // GET /api/auth/me — current user info
-  app.get("/api/auth/me", (req: Request, res: Response) => {
-    if (!req.isAuthenticated() || !req.user) {
-      return res.json({ user: null });
-    }
-    // Refresh user from DB to get latest subscription status
-    const freshUser = getUserById(req.user.id);
-    if (!freshUser) return res.json({ user: null });
-    res.json({ user: sanitizeUser(freshUser) });
-  });
+// Extract Bearer token from request
+function extractToken(req: Request): string | null {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith("Bearer ")) {
+    return auth.slice(7);
+  }
+  return null;
 }
 
 // Strip password hash before sending to client
@@ -256,35 +178,143 @@ function sanitizeUser(user: User) {
   };
 }
 
+// ── Auth Setup ──
+export function setupAuth(app: Express) {
+  // POST /api/auth/register
+  app.post("/api/auth/register", (req: Request, res: Response) => {
+    const { email, password, displayName } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+    if (password.length < 8) {
+      return res
+        .status(400)
+        .json({ error: "Password must be at least 8 characters" });
+    }
+
+    const existing = getUserByEmail(email);
+    if (existing) {
+      return res
+        .status(409)
+        .json({ error: "An account with this email already exists" });
+    }
+
+    try {
+      const user = createUser(email, password, displayName);
+      const token = createToken(user.id);
+      res.status(201).json({
+        user: sanitizeUser(user),
+        token,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  // POST /api/auth/login
+  app.post("/api/auth/login", (req: Request, res: Response) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
+    const user = getUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+    if (!bcrypt.compareSync(password, user.passwordHash)) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    const token = createToken(user.id);
+    res.json({ user: sanitizeUser(user), token });
+  });
+
+  // POST /api/auth/logout
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    const token = extractToken(req);
+    if (token) revokeToken(token);
+    res.json({ success: true });
+  });
+
+  // GET /api/auth/me — current user info
+  app.get("/api/auth/me", (req: Request, res: Response) => {
+    const token = extractToken(req);
+    if (!token) return res.json({ user: null });
+
+    const user = getUserFromToken(token);
+    if (!user) return res.json({ user: null });
+
+    // Return fresh user data from DB
+    const freshUser = getUserById(user.id);
+    if (!freshUser) return res.json({ user: null });
+    res.json({ user: sanitizeUser(freshUser) });
+  });
+}
+
 // ── Middleware ──
 
-// Require authentication
+// Require authentication (Bearer token)
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+  const token = extractToken(req);
+  if (!token) {
     return res.status(401).json({ error: "Authentication required" });
   }
+  const user = getUserFromToken(token);
+  if (!user) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  // Attach user to request for downstream use
+  (req as any).user = user;
   next();
 }
 
 // Require active subscription
-export function requireSubscription(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+export function requireSubscription(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const token = extractToken(req);
+  if (!token) {
     return res.status(401).json({ error: "Authentication required" });
   }
-  const user = getUserById(req.user.id);
-  if (!user || (user.subscriptionStatus !== "active" && user.subscriptionStatus !== "past_due")) {
-    return res.status(403).json({ error: "Active subscription required", subscriptionStatus: user?.subscriptionStatus || "free" });
+  const user = getUserFromToken(token);
+  if (!user) {
+    return res.status(401).json({ error: "Authentication required" });
   }
+  if (
+    user.subscriptionStatus !== "active" &&
+    user.subscriptionStatus !== "past_due"
+  ) {
+    return res.status(403).json({
+      error: "Active subscription required",
+      subscriptionStatus: user.subscriptionStatus,
+    });
+  }
+  (req as any).user = user;
   next();
 }
 
 // Check if user is premium (doesn't block — just annotates request)
-export function checkSubscription(req: Request, _res: Response, next: NextFunction) {
+export function checkSubscription(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) {
   (req as any).isPremium = false;
-  if (req.isAuthenticated() && req.user) {
-    const user = getUserById(req.user.id);
-    if (user && (user.subscriptionStatus === "active" || user.subscriptionStatus === "past_due")) {
+  const token = extractToken(req);
+  if (token) {
+    const user = getUserFromToken(token);
+    if (
+      user &&
+      (user.subscriptionStatus === "active" ||
+        user.subscriptionStatus === "past_due")
+    ) {
       (req as any).isPremium = true;
+      (req as any).user = user;
     }
   }
   next();
