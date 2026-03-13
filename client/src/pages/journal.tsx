@@ -16,7 +16,7 @@ import {
   BookOpen, TrendingUp, TrendingDown, Trophy, Clock, DollarSign,
   Target, Plus, X, Check, ChevronDown, ChevronUp, ArrowLeft,
   Calendar, Trash2, Edit3, BarChart3, Layers, Shield, ArrowDownUp,
-  Activity, Percent, Gauge
+  Activity, Percent, Gauge, Crosshair
 } from "lucide-react";
 import { BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts";
 import { Link } from "wouter";
@@ -542,8 +542,226 @@ function EditEntryDialog({ entry, open, onClose }: {
   );
 }
 
+// ── Journal Payoff Diagram ──
+function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
+  const W = 340;
+  const H = 160;
+  const pad = { top: 16, right: 16, bottom: 28, left: 44 };
+  const cW = W - pad.left - pad.right;
+  const cH = H - pad.top - pad.bottom;
+
+  const price = entry.underlyingPriceAtEntry;
+  const legs = entry.legs;
+  if (!legs || legs.length === 0) return null;
+
+  // Price range: ±15% from underlying
+  const lo = price * 0.85;
+  const hi = price * 1.15;
+  const steps = 80;
+
+  // Compute payoff points at expiration
+  const points: { price: number; pnl: number }[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const p = lo + (hi - lo) * (i / steps);
+    let pnl = 0;
+    for (const leg of legs) {
+      const intrinsic = leg.contractType === "put"
+        ? Math.max(leg.strikePrice - p, 0)
+        : Math.max(p - leg.strikePrice, 0);
+      if (leg.action === "sell") {
+        pnl += (leg.midpoint - intrinsic) * 100;
+      } else {
+        pnl += (intrinsic - leg.midpoint) * 100;
+      }
+    }
+    points.push({ price: p, pnl });
+  }
+
+  const maxPnl = Math.max(...points.map(p => p.pnl));
+  const minPnl = Math.min(...points.map(p => p.pnl));
+  const pnlRange = maxPnl - minPnl || 1;
+  const pnlPad = pnlRange * 0.1;
+  const yMin = minPnl - pnlPad;
+  const yMax = maxPnl + pnlPad;
+
+  const toX = (px: number) => pad.left + ((px - lo) / (hi - lo)) * cW;
+  const toY = (pnl: number) => pad.top + (1 - (pnl - yMin) / (yMax - yMin)) * cH;
+  const zeroY = Math.max(pad.top, Math.min(pad.top + cH, toY(0)));
+
+  // Build path
+  const pathD = points.map((pt, i) => {
+    const x = toX(pt.price);
+    const y = toY(pt.pnl);
+    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+
+  // Fill areas
+  const fillAbove = points.map((pt, i) => {
+    const x = toX(pt.price);
+    const y = Math.min(toY(Math.max(pt.pnl, 0)), zeroY);
+    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ") + ` L${toX(hi).toFixed(1)},${zeroY.toFixed(1)} L${toX(lo).toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  const fillBelow = points.map((pt, i) => {
+    const x = toX(pt.price);
+    const y = Math.max(toY(Math.min(pt.pnl, 0)), zeroY);
+    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ") + ` L${toX(hi).toFixed(1)},${zeroY.toFixed(1)} L${toX(lo).toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  // Expected move from IV
+  const soldLegs = legs.filter(l => l.action === "sell");
+  const avgIV = soldLegs.length > 0
+    ? soldLegs.reduce((sum, l) => sum + l.impliedVolatility, 0) / soldLegs.length
+    : legs.reduce((sum, l) => sum + l.impliedVolatility, 0) / legs.length;
+  const dte = daysUntil(entry.expirationDate);
+  const em = price * avgIV * Math.sqrt(Math.max(dte, 1) / 365);
+  const emLo = price - em;
+  const emHi = price + em;
+
+  // Y-axis ticks
+  const yTicks: number[] = [];
+  const yStep = Math.ceil(pnlRange / 4 / 50) * 50 || 100;
+  const yStart = Math.ceil(yMin / yStep) * yStep;
+  for (let v = yStart; v <= yMax; v += yStep) {
+    yTicks.push(v);
+  }
+  if (!yTicks.includes(0) && yMin < 0 && yMax > 0) yTicks.push(0);
+  yTicks.sort((a, b) => a - b);
+
+  // Compute break-even points (where payoff crosses zero)
+  const breakEvens: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    if ((prev.pnl <= 0 && curr.pnl > 0) || (prev.pnl >= 0 && curr.pnl < 0)) {
+      // Linear interpolation
+      const t = Math.abs(prev.pnl) / (Math.abs(prev.pnl) + Math.abs(curr.pnl));
+      breakEvens.push(prev.price + t * (curr.price - prev.price));
+    }
+  }
+
+  return (
+    <div className="mt-3" data-testid="journal-payoff-diagram">
+      <div className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+        <Crosshair className="w-3 h-3" />
+        P&L at Expiration
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+        {/* Expected move shading */}
+        {emLo > lo && emHi < hi && (
+          <rect
+            x={toX(emLo)} y={pad.top}
+            width={toX(emHi) - toX(emLo)} height={cH}
+            fill="hsl(217, 91%, 60%)" opacity={0.06} rx={2}
+          />
+        )}
+
+        {/* Grid lines */}
+        {yTicks.map((v) => (
+          <line key={v}
+            x1={pad.left} x2={W - pad.right}
+            y1={toY(v)} y2={toY(v)}
+            stroke="hsl(var(--border))"
+            strokeWidth={v === 0 ? 1 : 0.5}
+            strokeDasharray={v === 0 ? "none" : "2 2"}
+          />
+        ))}
+
+        {/* Profit / Loss fills */}
+        <path d={fillAbove} fill="hsl(142, 71%, 45%)" opacity={0.15} />
+        <path d={fillBelow} fill="hsl(0, 72%, 51%)" opacity={0.15} />
+
+        {/* Payoff line */}
+        <path d={pathD} fill="none" stroke="hsl(var(--foreground))" strokeWidth={1.5} />
+
+        {/* Underlying price line */}
+        <line
+          x1={toX(price)} y1={pad.top} x2={toX(price)} y2={pad.top + cH}
+          stroke="hsl(var(--muted-foreground))" strokeWidth={0.75} strokeDasharray="3 3"
+        />
+        <text x={toX(price)} y={pad.top + cH + 12} textAnchor="middle" fontSize={9} fill="hsl(var(--muted-foreground))">
+          {fmt$(price)}
+        </text>
+
+        {/* Expected move range labels */}
+        {emLo > lo && (
+          <>
+            <line x1={toX(emLo)} y1={pad.top} x2={toX(emLo)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
+            <text x={toX(emLo)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
+              EM {fmt$(emLo)}
+            </text>
+          </>
+        )}
+        {emHi < hi && (
+          <>
+            <line x1={toX(emHi)} y1={pad.top} x2={toX(emHi)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
+            <text x={toX(emHi)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
+              EM {fmt$(emHi)}
+            </text>
+          </>
+        )}
+
+        {/* Break-even markers */}
+        {breakEvens.map((be, i) => be > lo && be < hi && (
+          <g key={i}>
+            <line x1={toX(be)} y1={zeroY - 4} x2={toX(be)} y2={zeroY + 4} stroke="hsl(43, 74%, 49%)" strokeWidth={2} />
+            <text x={toX(be)} y={pad.top + cH + 22} textAnchor="middle" fontSize={8} fill="hsl(43, 74%, 49%)">
+              BE {fmt$(be)}
+            </text>
+          </g>
+        ))}
+
+        {/* Strike markers */}
+        {legs.filter(l => l.action === "sell").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+          <g key={`s${i}`}>
+            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(142, 71%, 45%)" strokeWidth={1.5} />
+          </g>
+        ))}
+        {legs.filter(l => l.action === "buy").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+          <g key={`b${i}`}>
+            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(0, 72%, 51%)" strokeWidth={1.5} />
+          </g>
+        ))}
+
+        {/* Y axis labels */}
+        {yTicks.map((v) => (
+          <text key={v} x={pad.left - 4} y={toY(v) + 3} textAnchor="end" fontSize={9} fill="hsl(var(--muted-foreground))">
+            {v >= 0 ? "+" : ""}{v < 1000 && v > -1000 ? `$${v}` : `$${(v / 1000).toFixed(1)}k`}
+          </text>
+        ))}
+
+        {/* Max profit / max loss labels */}
+        <text x={W - pad.right} y={toY(maxPnl) - 4} textAnchor="end" fontSize={8} fill="hsl(142, 71%, 45%)" fontWeight={600}>
+          Max +{fmt$(maxPnl)}
+        </text>
+        {minPnl < 0 && minPnl > -100000 && (
+          <text x={W - pad.right} y={toY(minPnl) + 12} textAnchor="end" fontSize={8} fill="hsl(0, 72%, 51%)" fontWeight={600}>
+            Max {fmt$(minPnl)}
+          </text>
+        )}
+      </svg>
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-1 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm" style={{ background: "hsl(217, 91%, 60%)", opacity: 0.3 }} />
+          Expected Move (±1σ)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm" style={{ background: "hsl(43, 74%, 49%)" }} />
+          Break-even
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-0.5" style={{ background: "hsl(var(--muted-foreground))" }} />
+          Entry Price
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Open Position Card ──
 function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onClose: (e: JournalEntry) => void; onEdit: (e: JournalEntry) => void }) {
+  const [showPayoff, setShowPayoff] = useState(false);
   const dte = daysUntil(entry.expirationDate);
   const Icon = STRATEGY_ICONS[entry.strategyType] || TrendingDown;
 
@@ -565,6 +783,11 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
           )}
         </div>
         <div className="flex gap-1.5 shrink-0">
+          <Button size="sm" variant={showPayoff ? "secondary" : "ghost"}
+            onClick={() => setShowPayoff(!showPayoff)}
+            className="text-xs h-7 px-2" data-testid={`button-payoff-${entry.id}`}>
+            <Crosshair className="w-3 h-3 mr-1" /> P&L
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => onEdit(entry)}
             className="text-xs h-7 px-2" data-testid={`button-edit-${entry.id}`}>
             <Edit3 className="w-3 h-3 mr-1" /> Edit
@@ -595,6 +818,10 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
         </div>
       </div>
 
+      {showPayoff && entry.legs?.length > 0 && (
+        <JournalPayoffDiagram entry={entry} />
+      )}
+
       {entry.notes && (
         <div className="text-xs text-muted-foreground mt-2 border-t border-border pt-1.5 line-clamp-2">
           {entry.notes}
@@ -607,6 +834,7 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
 // ── Closed Trade Row ──
 function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDelete: (id: number) => void; onEdit: (e: JournalEntry) => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [showPayoff, setShowPayoff] = useState(false);
   const pnl = entry.pnlTotal ?? 0;
   const isWin = pnl > 0;
   const daysHeld = entry.exitDate ? daysBetween(entry.entryDate, entry.exitDate) : 0;
@@ -655,7 +883,15 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
           {entry.notes && (
             <div className="text-muted-foreground border-t border-border pt-1.5 whitespace-pre-wrap">{entry.notes}</div>
           )}
+          {showPayoff && entry.legs?.length > 0 && (
+            <JournalPayoffDiagram entry={entry} />
+          )}
           <div className="flex justify-end gap-2 pt-1">
+            <Button variant={showPayoff ? "secondary" : "ghost"} size="sm" className="text-xs"
+              onClick={(e) => { e.stopPropagation(); setShowPayoff(!showPayoff); }}
+              data-testid={`button-payoff-closed-${entry.id}`}>
+              <Crosshair className="w-3 h-3 mr-1" /> P&L
+            </Button>
             <Button variant="ghost" size="sm" className="text-xs"
               onClick={(e) => { e.stopPropagation(); onEdit(entry); }}
               data-testid={`button-edit-closed-${entry.id}`}>
