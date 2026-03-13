@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, API_BASE } from "@/lib/queryClient";
 
 export interface AuthUser {
   id: number;
@@ -46,7 +46,7 @@ export function useAuth(): AuthState {
       setLoading(false);
       return;
     }
-    fetch("/api/auth/me", { credentials: "include" })
+    fetch(`${API_BASE}/api/auth/me`, { credentials: "include" })
       .then(r => r.json())
       .then(data => {
         cachedUser = data.user || null;
@@ -63,7 +63,7 @@ export function useAuth(): AuthState {
 
   const login = useCallback(async (email: string, password: string) => {
     try {
-      const res = await fetch(`/api/auth/login`, {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -85,7 +85,7 @@ export function useAuth(): AuthState {
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     try {
-      const res = await fetch(`/api/auth/register`, {
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, displayName }),
@@ -117,7 +117,7 @@ export function useAuth(): AuthState {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: "include" });
       const data = await res.json();
       cachedUser = data.user || null;
       setUser(cachedUser);
