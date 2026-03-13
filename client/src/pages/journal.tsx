@@ -766,6 +766,7 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
   const Icon = STRATEGY_ICONS[entry.strategyType] || TrendingDown;
 
   return (
+    <div style={showPayoff ? { gridColumn: '1 / -1' } : undefined}>
     <Card className="p-3 hover:shadow-sm transition-shadow" data-testid={`card-open-${entry.id}`}>
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -828,6 +829,7 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
         </div>
       )}
     </Card>
+    </div>
   );
 }
 
