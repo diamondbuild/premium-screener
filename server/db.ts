@@ -5,7 +5,11 @@ import path from "path";
 const currentDir = typeof __dirname !== "undefined"
   ? __dirname
   : path.dirname(new URL(import.meta.url).pathname);
-const DB_PATH = path.join(currentDir, "..", "data", "screener.db");
+
+// On Railway, DATABASE_PATH should point to the mounted volume (e.g. /data/screener.db)
+// Locally, defaults to <project>/data/screener.db
+const DB_PATH = process.env.DATABASE_PATH
+  || path.join(currentDir, "..", "data", "screener.db");
 
 // Ensure data directory exists
 import fs from "fs";
