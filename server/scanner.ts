@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { execFileSync, execFile } from "child_process";
 import { promisify } from "util";
 import { storeAtmIV } from "./iv-rank";
+import https from "https";
 
 const execFileAsync = promisify(execFile);
 
@@ -122,7 +123,31 @@ export function getSP500Tickers(): string[] {
 // Keep backward-compatible export
 const SP500_TICKERS = SP500_TICKERS_EMBEDDED;
 
-// ── Call finance_massive via the external-tool CLI (sync — used by IV backfill) ──
+// ── Polygon API key (Options Developer plan — 15-min delayed) ──
+const POLYGON_API_KEY = process.env.POLYGON_API_KEY || "ySa69UMk92kM1oE7j227SiIK6WfoMh21";
+
+// ── Call Polygon API directly via HTTPS (better data than connector) ──
+async function callPolygonDirect(pathname: string, params: Record<string, string> = {}): Promise<any> {
+  const qs = new URLSearchParams({ ...params, apiKey: POLYGON_API_KEY }).toString();
+  const url = `https://api.polygon.io${pathname}?${qs}`;
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 25000 }, (res) => {
+      let body = "";
+      res.on("data", (chunk: string) => { body += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); } catch { resolve(null); }
+      });
+    });
+    req.on("error", (err: Error) => {
+      console.error(`Polygon API [${pathname.split("/").pop()}]: ${err.message}`);
+      resolve(null);
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
+}
+
+// ── Fallback: Call finance_massive via the external-tool CLI ──
+// Used by IV backfill and as fallback for aggregates endpoints.
 function callMassiveSync(pathname: string, params: Record<string, string> = {}): any {
   const payload = JSON.stringify({
     source_id: "finance",
@@ -142,7 +167,7 @@ function callMassiveSync(pathname: string, params: Record<string, string> = {}):
   }
 }
 
-// ── Call finance_massive via the external-tool CLI (async — used by scanner) ──
+// Async connector fallback (kept for non-snapshot endpoints if needed)
 async function callMassive(pathname: string, params: Record<string, string> = {}): Promise<any> {
   const payload = JSON.stringify({
     source_id: "finance",
@@ -177,9 +202,9 @@ function parseMassiveResponse(raw: string): any {
   }
 }
 
-// ── Types for Polygon/Massive response ──
+// ── Types for Polygon response ──
 interface PolygonOption {
-  day?: { volume?: number; close?: number; };
+  day?: { volume?: number; close?: number; high?: number; low?: number; open?: number; vwap?: number; change?: number; change_percent?: number; previous_close?: number; };
   details?: {
     contract_type?: string;
     expiration_date?: string;
@@ -194,9 +219,11 @@ interface PolygonOption {
   };
   implied_volatility?: number;
   last_quote?: { ask?: number; bid?: number; midpoint?: number; };
+  last_trade?: { price?: number; size?: number; sip_timestamp?: number; timeframe?: string; };
   open_interest?: number;
-  underlying_asset?: { price?: number; ticker?: string; };
-  fmv?: number; // Fair market value (available after hours)
+  underlying_asset?: { price?: number; ticker?: string; timeframe?: string; };
+  fmv?: number; // Fair market value (available on Business plans)
+  break_even_price?: number;
 }
 
 // ── Helpers ──
@@ -214,41 +241,91 @@ function dateOffsetISO(days: number): string {
 function makeLegFromPolygon(opt: PolygonOption, action: "sell" | "buy"): OptionLeg | null {
   if (!opt.details || !opt.greeks?.delta) return null;
 
-  // Use live quotes if available, otherwise fall back to FMV or day close
+  const strike = opt.details.strike_price!;
+  const underlying = opt.underlying_asset?.price || 0;
+  const ctype = opt.details.contract_type;
+  const absDelta = Math.abs(opt.greeks.delta!);
+  const iv = opt.implied_volatility || 0;
+
+  // ── Step 1: Determine best available price ──
+  // Priority: last_quote (Business plan) > last_trade (Developer plan) > day.close > fmv
   let bid = opt.last_quote?.bid || 0;
   let ask = opt.last_quote?.ask || 0;
   let mid = opt.last_quote?.midpoint || 0;
+  let usingFallback = false;
 
-  // After hours: bid/ask are 0, use fmv or day.close as midpoint estimate
   if (mid <= 0 && bid <= 0) {
-    const fmvPrice = opt.fmv || opt.day?.close || 0;
-    if (fmvPrice <= 0) return null;
-    mid = fmvPrice;
-    // Estimate bid/ask with a typical spread
-    const spread = Math.max(0.05, fmvPrice * 0.03); // ~3% spread estimate
-    bid = +(fmvPrice - spread / 2).toFixed(2);
-    ask = +(fmvPrice + spread / 2).toFixed(2);
+    // No live bid/ask quotes — try last_trade price (Developer plan, 15-min delayed)
+    const tradePrice = opt.last_trade?.price || 0;
+    const dayClose = opt.day?.close || 0;
+    // Prefer last_trade if available and recent; otherwise day.close
+    const bestPrice = tradePrice > 0 ? tradePrice : (dayClose > 0 ? dayClose : (opt.fmv || 0));
+    if (bestPrice <= 0) return null;
+    mid = bestPrice;
+    usingFallback = !tradePrice; // Only flag as "fallback" if no last_trade
+    // Synthesize bid/ask with a spread based on the day's range if available
+    const dayHigh = opt.day?.high || 0;
+    const dayLow = opt.day?.low || 0;
+    const daySpread = dayHigh > dayLow && dayLow > 0 ? (dayHigh - dayLow) * 0.3 : 0;
+    const spread = daySpread > 0.02 ? daySpread : Math.max(0.05, bestPrice * 0.05);
+    bid = +Math.max(0.01, bestPrice - spread / 2).toFixed(2);
+    ask = +(bestPrice + spread / 2).toFixed(2);
   } else if (mid <= 0) {
     mid = +((bid + ask) / 2).toFixed(2);
   }
 
   if (mid <= 0.01) return null;
 
-  // Sanity check: reject options with clearly wrong pricing from the API.
-  // An OTM option's premium should be a fraction of the underlying, not exceed it.
-  // Also reject if midpoint exceeds the theoretical max for the contract type.
-  const strike = opt.details.strike_price!;
-  const underlying = opt.underlying_asset?.price || 0;
-  const ctype = opt.details.contract_type;
+  // ── Step 2: Strict validation when using fallback pricing ──
+  // Fallback prices (day.close/fmv) can be stale from trades made days/weeks
+  // ago at very different underlying prices. Apply aggressive sanity checks.
   if (underlying > 0) {
     const intrinsic = ctype === "put"
       ? Math.max(strike - underlying, 0)
       : Math.max(underlying - strike, 0);
-    // Premium should not exceed intrinsic + 20% of underlying (generous time-value cap)
-    const maxReasonable = intrinsic + underlying * 0.20;
-    if (mid > maxReasonable) return null;
+
     // Put can never be worth more than its strike price
     if (ctype === "put" && mid > strike) return null;
+    // Call can never be worth more than the underlying
+    if (ctype === "call" && mid > underlying) return null;
+
+    // ── Delta-based premium bounds ──
+    // For OTM options, the premium should correlate with delta.
+    if (absDelta > 0 && absDelta < 0.50) {
+      const maxTimeValue = absDelta * underlying * 2.0;
+      const timeValue = mid - intrinsic;
+      if (timeValue > maxTimeValue) return null;
+    }
+
+    // ── Theta-based cross-validation (most reliable stale price detector) ──
+    // Greeks (theta, delta, vega) are computed from CURRENT underlying price
+    // and IV model, independent of the stale day.close/fmv quote.
+    // Total remaining theta ≈ abs(theta) * DTE gives an independent price est.
+    // If the quoted price vastly exceeds this, the quote is stale.
+    // E.g. ENPH $34 put: theta=-0.025, DTE=29 → est=$0.73, but quote=$2.47
+    const absTheta = Math.abs(opt.greeks.theta || 0);
+    if (usingFallback && absTheta > 0 && absDelta < 0.50 && absDelta > 0.01) {
+      const dte = getDTE(opt.details.expiration_date!);
+      // Theta-based estimate with generous 3x multiplier (theta accelerates)
+      const thetaEstimate = absTheta * dte * 3.0;
+      if (mid > thetaEstimate + intrinsic && mid > 0.20) {
+        return null;
+      }
+    }
+
+    // ── Absolute premium cap ──
+    const maxReasonable = intrinsic + underlying * 0.10;
+    if (mid > maxReasonable) return null;
+  }
+
+  // ── Step 3: Liquidity gate for fallback pricing ──
+  // When using stale fallback data, require evidence of recent trading
+  // activity to reduce garbage from illiquid strikes.
+  if (usingFallback) {
+    const oi = opt.open_interest || 0;
+    const vol = opt.day?.volume || 0;
+    // Require either some daily volume OR meaningful open interest
+    if (vol === 0 && oi < 50) return null;
   }
 
   return {
@@ -264,7 +341,7 @@ function makeLegFromPolygon(opt: PolygonOption, action: "sell" | "buy"): OptionL
     gamma: opt.greeks.gamma || 0,
     theta: opt.greeks.theta || 0,
     vega: opt.greeks.vega || 0,
-    impliedVolatility: opt.implied_volatility || 0,
+    impliedVolatility: iv,
     openInterest: opt.open_interest || 0,
     volume: opt.day?.volume || 0,
   };
@@ -293,12 +370,12 @@ function computeZScores(opts: PolygonOption[]): Map<string, number> {
   return zMap;
 }
 
-// ── Fetch options chain via connector ──
+// ── Fetch options chain via direct Polygon API (Developer plan, 15-min delayed) ──
 async function fetchChain(
   ticker: string, contractType: "put" | "call",
   minDTE: number, maxDTE: number
 ): Promise<PolygonOption[]> {
-  const data = await callMassive(`/v3/snapshot/options/${ticker}`, {
+  const data = await callPolygonDirect(`/v3/snapshot/options/${ticker}`, {
     contract_type: contractType,
     "expiration_date.gte": dateOffsetISO(minDTE),
     "expiration_date.lte": dateOffsetISO(maxDTE),
@@ -550,8 +627,11 @@ async function scanTicker(
     for (const p of puts) {
       const exp = p.details?.expiration_date;
       if (!exp || !p.greeks?.delta) continue;
-      // Need either a live bid or an FMV/close price
-      const hasPrice = (p.last_quote?.bid && p.last_quote.bid > 0) || (p.fmv && p.fmv > 0) || (p.day?.close && p.day.close > 0);
+      // Need any usable price source
+      const hasPrice = (p.last_quote?.bid && p.last_quote.bid > 0)
+        || (p.last_trade?.price && p.last_trade.price > 0)
+        || (p.day?.close && p.day.close > 0)
+        || (p.fmv && p.fmv > 0);
       if (!hasPrice) continue;
       if (!putsByExp.has(exp)) putsByExp.set(exp, []);
       putsByExp.get(exp)!.push(p);
@@ -559,7 +639,10 @@ async function scanTicker(
     for (const c of calls) {
       const exp = c.details?.expiration_date;
       if (!exp || !c.greeks?.delta) continue;
-      const hasPrice = (c.last_quote?.bid && c.last_quote.bid > 0) || (c.fmv && c.fmv > 0) || (c.day?.close && c.day.close > 0);
+      const hasPrice = (c.last_quote?.bid && c.last_quote.bid > 0)
+        || (c.last_trade?.price && c.last_trade.price > 0)
+        || (c.day?.close && c.day.close > 0)
+        || (c.fmv && c.fmv > 0);
       if (!hasPrice) continue;
       if (!callsByExp.has(exp)) callsByExp.set(exp, []);
       callsByExp.get(exp)!.push(c);
