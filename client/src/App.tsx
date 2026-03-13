@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import Dashboard from "@/pages/dashboard";
 import JournalPage from "@/pages/journal";
 import AuthPage from "@/pages/auth";
+import LandingPage from "@/pages/landing";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -27,11 +28,12 @@ function AppRouter() {
 
   if (loading) return <LoadingScreen />;
 
-  // Not logged in: show auth page for all routes
+  // Not logged in: show landing page + auth page
   if (!user) {
     return (
       <Switch>
-        <Route path="/" component={AuthPage} />
+        <Route path="/" component={LandingPage} />
+        <Route path="/auth" component={AuthPage} />
         <Route>{() => <Redirect to="/" />}</Route>
       </Switch>
     );
