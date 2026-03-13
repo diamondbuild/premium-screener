@@ -1438,11 +1438,11 @@ type StrategySummary = Record<string, { count: number; avgScore: number; avgROC:
 export default function Dashboard() {
   const [strategy, setStrategy] = useState<FilterType>("all");
   const [sortBy, setSortBy] = useState<SortField>("compositeScore");
-  const [topN, setTopN] = useState(5);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [excludeEarnings, setExcludeEarnings] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(25);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -1452,13 +1452,7 @@ export default function Dashboard() {
     });
   };
 
-  const earningsParam = excludeEarnings ? "&excludeEarnings=1" : "";
-  const { data: picksData, isLoading: picksLoading } = useQuery<{ picks: StrategyTradeWithEarnings[] }>({
-    queryKey: ["/api/top-picks", `?strategy=${strategy}&topN=${topN}${earningsParam}`],
-    refetchInterval: 15000,
-  });
-
-  const { data: allData } = useQuery<{ results: StrategyTradeWithEarnings[]; total: number; totalBeforeFilter?: number }>({
+  const { data: allData, isLoading: allLoading } = useQuery<{ results: StrategyTradeWithEarnings[]; total: number; totalBeforeFilter?: number }>({
     queryKey: ["/api/all-results", excludeEarnings ? "?excludeEarnings=1" : ""],
     refetchInterval: 15000,
   });
@@ -1505,7 +1499,6 @@ export default function Dashboard() {
     mutationFn: () => apiRequest("POST", "/api/scan"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scan-status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/top-picks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/all-results"] });
       queryClient.invalidateQueries({ queryKey: ["/api/strategy-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/scan-history"] });
@@ -1530,15 +1523,18 @@ export default function Dashboard() {
     },
   });
 
-  const picks = picksData?.picks || [];
+  const allResults = allData?.results || [];
   const isScanning = scanStatus?.status === "scanning";
   const watchlist = watchlistData?.watchlist || [];
   const alerts = alertsData?.alerts || [];
   const unseenCount = alertsData?.unseenCount || 0;
   const watchlistTickers = new Set(watchlist.map(w => w.ticker));
 
-  // Sort picks, with watchlist tickers pinned to top
-  const sortedPicks = [...picks].sort((a, b) => {
+  // Filter by strategy
+  const filteredResults = strategy === "all" ? allResults : allResults.filter(r => r.strategyType === strategy);
+
+  // Sort results, with watchlist tickers pinned to top
+  const sortedResults = [...filteredResults].sort((a, b) => {
     const aWatchlist = watchlistTickers.has(a.underlyingTicker) ? 1 : 0;
     const bWatchlist = watchlistTickers.has(b.underlyingTicker) ? 1 : 0;
     if (aWatchlist !== bWatchlist) return bWatchlist - aWatchlist;
@@ -1554,11 +1550,22 @@ export default function Dashboard() {
     }
   });
 
-  // KPIs from picks
-  const avgROC = picks.length > 0 ? picks.reduce((s, p) => s + p.annualizedROC, 0) / picks.length : 0;
-  const avgPOP = picks.length > 0 ? picks.reduce((s, p) => s + p.probabilityOfProfit, 0) / picks.length * 100 : 0;
-  const avgDZ = picks.length > 0 ? picks.reduce((s, p) => s + Math.abs(p.deltaZScore), 0) / picks.length : 0;
-  const totalCredit = picks.reduce((s, p) => s + p.netCredit * 100, 0);
+  // Reset visible count when filter changes
+  const prevStrategyRef = useRef(strategy);
+  if (prevStrategyRef.current !== strategy) {
+    prevStrategyRef.current = strategy;
+    setVisibleCount(25);
+  }
+
+  const visibleResults = sortedResults.slice(0, visibleCount);
+  const hasMore = visibleCount < sortedResults.length;
+
+  // KPIs from top 5 picks
+  const top5 = sortedResults.slice(0, 5);
+  const avgROC = top5.length > 0 ? top5.reduce((s, p) => s + p.annualizedROC, 0) / top5.length : 0;
+  const avgPOP = top5.length > 0 ? top5.reduce((s, p) => s + p.probabilityOfProfit, 0) / top5.length * 100 : 0;
+  const avgDZ = top5.length > 0 ? top5.reduce((s, p) => s + Math.abs(p.deltaZScore), 0) / top5.length : 0;
+  const totalCredit = top5.reduce((s, p) => s + p.netCredit * 100, 0);
 
   const scanHistory = historyData?.history || [];
 
@@ -1708,7 +1715,7 @@ export default function Dashboard() {
           <KPICard icon={DollarSign} label="Avg Ann. ROC" value={fmtPct(avgROC)} sub="Across top picks" color="text-profit" />
           <KPICard icon={Shield} label="Avg POP" value={fmtPct(avgPOP)} sub="Win probability" color="text-chart-1" />
           <KPICard icon={Zap} label="Avg Delta Z" value={avgDZ.toFixed(1) + "σ"} sub="Above recent avg" color="text-chart-3" />
-          <KPICard icon={Target} label="Total Credit" value={fmt$(totalCredit)} sub={`${picks.length} trades`} color="text-chart-4" />
+          <KPICard icon={Target} label="Total Credit" value={fmt$(totalCredit)} sub={`${top5.length} trades`} color="text-chart-4" />
         </div>
 
         {/* Strategy Summary Cards */}
@@ -1876,32 +1883,28 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Top Picks */}
+        {/* All Trade Ideas */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <BarChart3 className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-semibold">
-              Top {topN} {STRATEGY_LABELS[strategy]} Picks
+              {STRATEGY_LABELS[strategy]} Trade Ideas
             </h2>
-            <div className="flex items-center gap-1 ml-auto">
-              {[5, 10, 15].map((n) => (
-                <Button key={n} size="sm" variant={topN === n ? "default" : "ghost"} className="text-xs h-7 px-2" onClick={() => setTopN(n)} data-testid={`button-top-${n}`}>
-                  {n}
-                </Button>
-              ))}
-            </div>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {sortedResults.length} trades
+            </span>
           </div>
 
-          {picksLoading ? (
+          {allLoading ? (
             <LoadingSkeleton />
-          ) : sortedPicks.length === 0 ? (
+          ) : sortedResults.length === 0 ? (
             <Card className="p-8 text-center">
               <Activity className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No results for this strategy. Try a different filter or run a scan.</p>
             </Card>
           ) : (
             <div className="space-y-3">
-              {sortedPicks.map((trade, i) => (
+              {visibleResults.map((trade, i) => (
                 <TradeCard
                   key={trade.id}
                   trade={trade}
@@ -1915,6 +1918,19 @@ export default function Dashboard() {
                   onLogTrade={handleLogTrade}
                 />
               ))}
+              {hasMore && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVisibleCount(prev => prev + 25)}
+                    data-testid="button-show-more"
+                    className="text-xs"
+                  >
+                    Show More ({sortedResults.length - visibleCount} remaining)
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
