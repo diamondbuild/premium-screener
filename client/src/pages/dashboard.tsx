@@ -590,9 +590,17 @@ function PayoffDiagram({ trade }: { trade: StrategyTradeWithEarnings }) {
   const credit = trade.netCredit * 100; // per contract
   const legs = trade.legs;
 
-  // Price range: ±15% from underlying
-  const lo = price * 0.85;
-  const hi = price * 1.15;
+  // Price range: ±20% from the spread center, expanded to include underlying
+  const allStrikes = legs.map((l: any) => l.strikePrice);
+  const minStrike = Math.min(...allStrikes);
+  const maxStrike = Math.max(...allStrikes);
+  const spreadCenter = (minStrike + maxStrike) / 2;
+  const spreadWidth = maxStrike - minStrike || maxStrike * 0.05;
+  const baseHalf = spreadCenter * 0.20;
+  let lo = Math.max(0, spreadCenter - baseHalf);
+  let hi = spreadCenter + baseHalf;
+  if (price < lo) lo = price - spreadWidth;
+  if (price > hi) hi = price + spreadWidth;
   const steps = 80;
 
   const points: { price: number; pnl: number }[] = [];
@@ -672,12 +680,12 @@ function PayoffDiagram({ trade }: { trade: StrategyTradeWithEarnings }) {
         P&L at Expiration
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
-        {/* Expected move shading */}
-        {emLo > lo && emHi < hi && (
+        {/* Expected move shading (clamp to visible range) */}
+        {emLo < hi && emHi > lo && (
           <rect
-            x={toX(emLo)}
+            x={toX(Math.max(emLo, lo))}
             y={pad.top}
-            width={toX(emHi) - toX(emLo)}
+            width={toX(Math.min(emHi, hi)) - toX(Math.max(emLo, lo))}
             height={cH}
             fill="hsl(217, 91%, 60%)"
             opacity={0.06}

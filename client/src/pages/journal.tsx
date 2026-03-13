@@ -543,6 +543,9 @@ function EditEntryDialog({ entry, open, onClose }: {
 }
 
 // ── Journal Payoff Diagram ──
+// Uses geometric keypoints instead of point-by-point computation.
+// A PCS always has the same shape: flat max-loss → diagonal → flat max-profit.
+// We just plug in the trade's actual values.
 function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   const W = 340;
   const H = 160;
@@ -550,35 +553,43 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
-  const price = entry.underlyingPriceAtEntry;
+  const price = Number(entry.underlyingPriceAtEntry);
   const legs = entry.legs;
   if (!legs || legs.length === 0) return null;
 
-  // Price range: ±15% from underlying
-  const lo = price * 0.85;
-  const hi = price * 1.15;
-  const steps = 80;
+  // Extract key trade parameters with explicit number coercion
+  const allStrikes = legs.map(l => Number(l.strikePrice));
+  const minStrike = Math.min(...allStrikes);
+  const maxStrike = Math.max(...allStrikes);
+  const spreadWidth = maxStrike - minStrike || maxStrike * 0.05;
 
-  // Compute payoff points at expiration
-  const points: { price: number; pnl: number }[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const p = lo + (hi - lo) * (i / steps);
-    let pnl = 0;
-    for (const leg of legs) {
-      const intrinsic = leg.contractType === "put"
-        ? Math.max(leg.strikePrice - p, 0)
-        : Math.max(p - leg.strikePrice, 0);
-      if (leg.action === "sell") {
-        pnl += (leg.midpoint - intrinsic) * 100;
-      } else {
-        pnl += (intrinsic - leg.midpoint) * 100;
-      }
-    }
-    points.push({ price: p, pnl });
-  }
+  // Compute max profit & max loss from the entry's own credit/maxLoss
+  const credit = Number(entry.entryCredit);
+  const maxProfit = Math.round(credit * 100);
+  const maxLoss = Math.round(Number(entry.maxLoss)); // already negative
 
-  const maxPnl = Math.max(...points.map(p => p.pnl));
-  const minPnl = Math.min(...points.map(p => p.pnl));
+  // Break-even: for PCS = sell strike - credit
+  const sellStrike = allStrikes.find((_, i) => legs[i].action === "sell") ?? maxStrike;
+  const buyStrike = allStrikes.find((_, i) => legs[i].action === "buy") ?? minStrike;
+  const breakEven = sellStrike - credit; // PCS break-even
+
+  // Build 4 keypoints: the universal PCS shape
+  // [far left = max loss] → [buy strike = max loss] → [sell strike = max profit] → [far right = max profit]
+  // Price range: enough padding around strikes + include underlying
+  const rangeMargin = spreadWidth * 3;
+  let lo = Math.min(buyStrike - rangeMargin, price * 0.85);
+  let hi = Math.max(sellStrike + rangeMargin, price * 1.15);
+  lo = Math.max(0, lo);
+
+  const keyPoints: { price: number; pnl: number }[] = [
+    { price: lo, pnl: maxLoss },
+    { price: buyStrike, pnl: maxLoss },
+    { price: sellStrike, pnl: maxProfit },
+    { price: hi, pnl: maxProfit },
+  ];
+
+  const minPnl = maxLoss;
+  const maxPnl = maxProfit;
   const pnlRange = maxPnl - minPnl || 1;
   const pnlPad = pnlRange * 0.1;
   const yMin = minPnl - pnlPad;
@@ -588,31 +599,26 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   const toY = (pnl: number) => pad.top + (1 - (pnl - yMin) / (yMax - yMin)) * cH;
   const zeroY = Math.max(pad.top, Math.min(pad.top + cH, toY(0)));
 
-  // Build path
-  const pathD = points.map((pt, i) => {
-    const x = toX(pt.price);
-    const y = toY(pt.pnl);
-    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
+  // Build the payoff line path from keypoints
+  const pathD = keyPoints.map((pt, i) =>
+    `${i === 0 ? "M" : "L"}${toX(pt.price).toFixed(1)},${toY(pt.pnl).toFixed(1)}`
+  ).join(" ");
 
-  // Fill areas
-  const fillAbove = points.map((pt, i) => {
-    const x = toX(pt.price);
-    const y = Math.min(toY(Math.max(pt.pnl, 0)), zeroY);
-    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ") + ` L${toX(hi).toFixed(1)},${zeroY.toFixed(1)} L${toX(lo).toFixed(1)},${zeroY.toFixed(1)} Z`;
+  // Fill areas: profit above zero, loss below zero
+  // Green fill: from zero line up to payoff line where pnl > 0
+  const profitStartX = toX(breakEven);
+  const profitY = toY(maxProfit);
+  const fillAbove = `M${profitStartX.toFixed(1)},${zeroY.toFixed(1)} L${toX(sellStrike).toFixed(1)},${profitY.toFixed(1)} L${toX(hi).toFixed(1)},${profitY.toFixed(1)} L${toX(hi).toFixed(1)},${zeroY.toFixed(1)} Z`;
 
-  const fillBelow = points.map((pt, i) => {
-    const x = toX(pt.price);
-    const y = Math.max(toY(Math.min(pt.pnl, 0)), zeroY);
-    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ") + ` L${toX(hi).toFixed(1)},${zeroY.toFixed(1)} L${toX(lo).toFixed(1)},${zeroY.toFixed(1)} Z`;
+  // Red fill: from zero line down to payoff line where pnl < 0
+  const lossY = toY(maxLoss);
+  const fillBelow = `M${toX(lo).toFixed(1)},${zeroY.toFixed(1)} L${toX(lo).toFixed(1)},${lossY.toFixed(1)} L${toX(buyStrike).toFixed(1)},${lossY.toFixed(1)} L${profitStartX.toFixed(1)},${zeroY.toFixed(1)} Z`;
 
   // Expected move from IV
   const soldLegs = legs.filter(l => l.action === "sell");
   const avgIV = soldLegs.length > 0
-    ? soldLegs.reduce((sum, l) => sum + l.impliedVolatility, 0) / soldLegs.length
-    : legs.reduce((sum, l) => sum + l.impliedVolatility, 0) / legs.length;
+    ? soldLegs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / soldLegs.length
+    : legs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / legs.length;
   const dte = daysUntil(entry.expirationDate);
   const em = price * avgIV * Math.sqrt(Math.max(dte, 1) / 365);
   const emLo = price - em;
@@ -628,18 +634,6 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   if (!yTicks.includes(0) && yMin < 0 && yMax > 0) yTicks.push(0);
   yTicks.sort((a, b) => a - b);
 
-  // Compute break-even points (where payoff crosses zero)
-  const breakEvens: number[] = [];
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    if ((prev.pnl <= 0 && curr.pnl > 0) || (prev.pnl >= 0 && curr.pnl < 0)) {
-      // Linear interpolation
-      const t = Math.abs(prev.pnl) / (Math.abs(prev.pnl) + Math.abs(curr.pnl));
-      breakEvens.push(prev.price + t * (curr.price - prev.price));
-    }
-  }
-
   return (
     <div className="mt-3" data-testid="journal-payoff-diagram">
       <div className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
@@ -647,11 +641,11 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
         P&L at Expiration
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
-        {/* Expected move shading */}
-        {emLo > lo && emHi < hi && (
+        {/* Expected move shading (clamp to visible range) */}
+        {emLo < hi && emHi > lo && (
           <rect
-            x={toX(emLo)} y={pad.top}
-            width={toX(emHi) - toX(emLo)} height={cH}
+            x={toX(Math.max(emLo, lo))} y={pad.top}
+            width={toX(Math.min(emHi, hi)) - toX(Math.max(emLo, lo))} height={cH}
             fill="hsl(217, 91%, 60%)" opacity={0.06} rx={2}
           />
         )}
@@ -701,25 +695,25 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
           </>
         )}
 
-        {/* Break-even markers */}
-        {breakEvens.map((be, i) => be > lo && be < hi && (
-          <g key={i}>
-            <line x1={toX(be)} y1={zeroY - 4} x2={toX(be)} y2={zeroY + 4} stroke="hsl(43, 74%, 49%)" strokeWidth={2} />
-            <text x={toX(be)} y={pad.top + cH + 22} textAnchor="middle" fontSize={8} fill="hsl(43, 74%, 49%)">
-              BE {fmt$(be)}
+        {/* Break-even marker */}
+        {breakEven > lo && breakEven < hi && (
+          <g>
+            <line x1={toX(breakEven)} y1={zeroY - 4} x2={toX(breakEven)} y2={zeroY + 4} stroke="hsl(43, 74%, 49%)" strokeWidth={2} />
+            <text x={toX(breakEven)} y={pad.top + cH + 22} textAnchor="middle" fontSize={8} fill="hsl(43, 74%, 49%)">
+              BE {fmt$(breakEven)}
             </text>
           </g>
-        ))}
+        )}
 
         {/* Strike markers */}
-        {legs.filter(l => l.action === "sell").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+        {legs.filter(l => l.action === "sell").map((leg, i) => Number(leg.strikePrice) > lo && Number(leg.strikePrice) < hi && (
           <g key={`s${i}`}>
-            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(142, 71%, 45%)" strokeWidth={1.5} />
+            <line x1={toX(Number(leg.strikePrice))} y1={pad.top + cH - 2} x2={toX(Number(leg.strikePrice))} y2={pad.top + cH + 3} stroke="hsl(142, 71%, 45%)" strokeWidth={1.5} />
           </g>
         ))}
-        {legs.filter(l => l.action === "buy").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+        {legs.filter(l => l.action === "buy").map((leg, i) => Number(leg.strikePrice) > lo && Number(leg.strikePrice) < hi && (
           <g key={`b${i}`}>
-            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(0, 72%, 51%)" strokeWidth={1.5} />
+            <line x1={toX(Number(leg.strikePrice))} y1={pad.top + cH - 2} x2={toX(Number(leg.strikePrice))} y2={pad.top + cH + 3} stroke="hsl(0, 72%, 51%)" strokeWidth={1.5} />
           </g>
         ))}
 
@@ -736,7 +730,7 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
         </text>
         {minPnl < 0 && minPnl > -100000 && (
           <text x={W - pad.right} y={toY(minPnl) + 12} textAnchor="end" fontSize={8} fill="hsl(0, 72%, 51%)" fontWeight={600}>
-            Max {fmt$(minPnl)}
+            Max {fmt$(Math.abs(minPnl))}
           </text>
         )}
       </svg>
