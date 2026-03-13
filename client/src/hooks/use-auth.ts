@@ -63,28 +63,36 @@ export function useAuth(): AuthState {
 
   const login = useCallback(async (email: string, password: string) => {
     try {
-      const res = await apiRequest("POST", "/api/auth/login", { email, password });
+      const res = await fetch(`/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
       const data = await res.json();
-      if (data.user) {
+      if (res.ok && data.user) {
         cachedUser = data.user;
         setUser(cachedUser);
         notifyListeners();
-        // Invalidate all queries to refetch with new auth state
         queryClient.invalidateQueries();
         return {};
       }
-      return { error: data.error || "Login failed" };
+      return { error: data.error || "Invalid email or password" };
     } catch (err: any) {
-      const body = await err?.json?.().catch(() => null);
-      return { error: body?.error || "Login failed" };
+      return { error: "Network error. Please try again." };
     }
   }, []);
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     try {
-      const res = await apiRequest("POST", "/api/auth/register", { email, password, displayName });
+      const res = await fetch(`/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName }),
+        credentials: "include",
+      });
       const data = await res.json();
-      if (data.user) {
+      if (res.ok && data.user) {
         cachedUser = data.user;
         setUser(cachedUser);
         notifyListeners();
@@ -93,8 +101,7 @@ export function useAuth(): AuthState {
       }
       return { error: data.error || "Registration failed" };
     } catch (err: any) {
-      const body = await err?.json?.().catch(() => null);
-      return { error: body?.error || "Registration failed" };
+      return { error: "Network error. Please try again." };
     }
   }, []);
 
