@@ -234,10 +234,27 @@ function makeLegFromPolygon(opt: PolygonOption, action: "sell" | "buy"): OptionL
 
   if (mid <= 0.01) return null;
 
+  // Sanity check: reject options with clearly wrong pricing from the API.
+  // An OTM option's premium should be a fraction of the underlying, not exceed it.
+  // Also reject if midpoint exceeds the theoretical max for the contract type.
+  const strike = opt.details.strike_price!;
+  const underlying = opt.underlying_asset?.price || 0;
+  const ctype = opt.details.contract_type;
+  if (underlying > 0) {
+    const intrinsic = ctype === "put"
+      ? Math.max(strike - underlying, 0)
+      : Math.max(underlying - strike, 0);
+    // Premium should not exceed intrinsic + 20% of underlying (generous time-value cap)
+    const maxReasonable = intrinsic + underlying * 0.20;
+    if (mid > maxReasonable) return null;
+    // Put can never be worth more than its strike price
+    if (ctype === "put" && mid > strike) return null;
+  }
+
   return {
     ticker: opt.details.ticker!,
     contractType: opt.details.contract_type as "put" | "call",
-    strikePrice: opt.details.strike_price!,
+    strikePrice: strike,
     expirationDate: opt.details.expiration_date!,
     action,
     bid,
