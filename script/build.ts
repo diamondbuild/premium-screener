@@ -6,7 +6,6 @@ import { rm, readFile } from "fs/promises";
 // which helps cold start times
 const allowlist = [
   "bcryptjs",
-  "better-sqlite3",
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
@@ -16,6 +15,9 @@ const allowlist = [
   "zod",
   "zod-validation-error",
 ];
+
+// Native modules must ALWAYS be external — their .node binaries can't be bundled
+const alwaysExternal = ["better-sqlite3"];
 
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
@@ -29,7 +31,10 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  const externals = [
+    ...allDeps.filter((dep) => !allowlist.includes(dep)),
+    ...alwaysExternal,
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],
