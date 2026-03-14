@@ -246,7 +246,7 @@ export const journalEntrySchema = z.object({
   entryDate: z.string(),
   entryCredit: z.number(),                // Credit received per contract at open
   contracts: z.number(),                   // Number of contracts
-  underlyingPriceAtEntry: z.number(),
+  underlyingPriceAtEntry: z.number().nullable(),
   // Status
   status: journalStatusSchema,
   // Exit details (null while open)
@@ -279,7 +279,7 @@ export const insertJournalEntrySchema = z.object({
   entryDate: z.string(),
   entryCredit: z.number().min(0),
   contracts: z.number().int().min(1).default(1),
-  underlyingPriceAtEntry: z.number().min(0),
+  underlyingPriceAtEntry: z.number().min(0).nullable().default(null),
   maxLoss: z.number(),
   spreadWidth: z.number().nullable().default(null),
   compositeScoreAtEntry: z.number().nullable().default(null),

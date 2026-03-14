@@ -344,7 +344,7 @@ function AddTradeDialog({ open, onClose }: { open: boolean; onClose: () => void 
         entryDate,
         entryCredit: parseFloat(credit),
         contracts: parseInt(contracts),
-        underlyingPriceAtEntry: parseFloat(price),
+        underlyingPriceAtEntry: price ? parseFloat(price) : null,
         maxLoss: parseFloat(maxLoss),
         notes: notes || null,
         tags: [],
@@ -363,7 +363,7 @@ function AddTradeDialog({ open, onClose }: { open: boolean; onClose: () => void 
     onError: () => toast({ title: "Error", description: "Failed to add trade", variant: "destructive" }),
   });
 
-  const valid = ticker && expDate && credit && price && maxLoss;
+  const valid = ticker && expDate && credit && maxLoss;
 
   return (
     <Dialog open={open} onOpenChange={() => onClose()}>
@@ -427,7 +427,7 @@ function AddTradeDialog({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
 
           <div>
-            <Label className="text-xs">Underlying Price at Entry</Label>
+            <Label className="text-xs">Underlying Price at Entry (optional)</Label>
             <Input type="number" step="0.01" value={price}
               onChange={e => setPrice(e.target.value)} placeholder="150.00" data-testid="input-underlying" />
           </div>
@@ -553,7 +553,7 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
-  const price = Number(entry.underlyingPriceAtEntry);
+  const price = entry.underlyingPriceAtEntry != null ? Number(entry.underlyingPriceAtEntry) : null;
   const legs = entry.legs;
   if (!legs || legs.length === 0) return null;
 
@@ -577,8 +577,8 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   // [far left = max loss] → [buy strike = max loss] → [sell strike = max profit] → [far right = max profit]
   // Price range: enough padding around strikes + include underlying
   const rangeMargin = spreadWidth * 3;
-  let lo = Math.min(buyStrike - rangeMargin, price * 0.85);
-  let hi = Math.max(sellStrike + rangeMargin, price * 1.15);
+  let lo = Math.min(buyStrike - rangeMargin, price != null ? price * 0.85 : buyStrike - rangeMargin);
+  let hi = Math.max(sellStrike + rangeMargin, price != null ? price * 1.15 : sellStrike + rangeMargin);
   lo = Math.max(0, lo);
 
   const keyPoints: { price: number; pnl: number }[] = [
@@ -620,9 +620,9 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
     ? soldLegs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / soldLegs.length
     : legs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / legs.length;
   const dte = daysUntil(entry.expirationDate);
-  const em = price * avgIV * Math.sqrt(Math.max(dte, 1) / 365);
-  const emLo = price - em;
-  const emHi = price + em;
+  const em = price != null ? price * avgIV * Math.sqrt(Math.max(dte, 1) / 365) : 0;
+  const emLo = price != null ? price - em : 0;
+  const emHi = price != null ? price + em : 0;
 
   // Y-axis ticks
   const yTicks: number[] = [];
@@ -642,7 +642,7 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
         {/* Expected move shading (clamp to visible range) */}
-        {emLo < hi && emHi > lo && (
+        {price != null && emLo < hi && emHi > lo && (
           <rect
             x={toX(Math.max(emLo, lo))} y={pad.top}
             width={toX(Math.min(emHi, hi)) - toX(Math.max(emLo, lo))} height={cH}
@@ -669,16 +669,20 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
         <path d={pathD} fill="none" stroke="hsl(var(--foreground))" strokeWidth={1.5} />
 
         {/* Underlying price line */}
-        <line
-          x1={toX(price)} y1={pad.top} x2={toX(price)} y2={pad.top + cH}
-          stroke="hsl(var(--muted-foreground))" strokeWidth={0.75} strokeDasharray="3 3"
-        />
-        <text x={toX(price)} y={pad.top + cH + 12} textAnchor="middle" fontSize={9} fill="hsl(var(--muted-foreground))">
-          {fmt$(price)}
-        </text>
+        {price != null && (
+          <>
+            <line
+              x1={toX(price)} y1={pad.top} x2={toX(price)} y2={pad.top + cH}
+              stroke="hsl(var(--muted-foreground))" strokeWidth={0.75} strokeDasharray="3 3"
+            />
+            <text x={toX(price)} y={pad.top + cH + 12} textAnchor="middle" fontSize={9} fill="hsl(var(--muted-foreground))">
+              {fmt$(price)}
+            </text>
+          </>
+        )}
 
         {/* Expected move range labels */}
-        {emLo > lo && (
+        {price != null && emLo > lo && (
           <>
             <line x1={toX(emLo)} y1={pad.top} x2={toX(emLo)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
             <text x={toX(emLo)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
@@ -686,7 +690,7 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
             </text>
           </>
         )}
-        {emHi < hi && (
+        {price != null && emHi < hi && (
           <>
             <line x1={toX(emHi)} y1={pad.top} x2={toX(emHi)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
             <text x={toX(emHi)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
@@ -871,7 +875,7 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
             <div><span className="text-muted-foreground">Exit Debit:</span> {fmt$(entry.exitDebit ?? 0)}</div>
             <div><span className="text-muted-foreground">Contracts:</span> {entry.contracts}</div>
             <div><span className="text-muted-foreground">P&L/Contract:</span> <span className={isWin ? "text-profit" : "text-loss"}>{fmtPnL(entry.pnlPerContract ?? 0)}</span></div>
-            <div><span className="text-muted-foreground">Entry Price:</span> {fmt$(entry.underlyingPriceAtEntry)}</div>
+            {entry.underlyingPriceAtEntry != null && <div><span className="text-muted-foreground">Entry Price:</span> {fmt$(entry.underlyingPriceAtEntry)}</div>}
             {entry.underlyingPriceAtExit && <div><span className="text-muted-foreground">Exit Price:</span> {fmt$(entry.underlyingPriceAtExit)}</div>}
             {entry.compositeScoreAtEntry && <div><span className="text-muted-foreground">Score:</span> {entry.compositeScoreAtEntry.toFixed(1)}</div>}
             {entry.ivRankAtEntry != null && <div><span className="text-muted-foreground">IVR:</span> {Math.round(entry.ivRankAtEntry)}%</div>}
