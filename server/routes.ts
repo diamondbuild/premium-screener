@@ -5,7 +5,7 @@ import db from "./db";
 import { FAVICON_32_B64, FAVICON_180_B64, FAVICON_192_B64, FAVICON_512_B64 } from "./asset-favicons";
 import { OG_IMAGE_B64 } from "./asset-og";
 import { runFullScan, getSP500Tickers } from "./scanner";
-import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey } from "./backtester";
+import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey, getHistoricalWinRate } from "./backtester";
 import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings, importEarningsData } from "./earnings";
 import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
 import { requireAuth, requireSubscription, checkSubscription, getUserByEmail, updateUserSubscription } from "./auth";
@@ -91,12 +91,16 @@ function makeLeg(opts: {
   };
 }
 
-function computeScore(trade: Partial<StrategyTrade>): number {
+function computeScore(trade: Partial<StrategyTrade>, opts?: { ivRank?: number | null; winRate?: number | null }): number {
   const deltaScore = Math.min(Math.abs(trade.deltaZScore || 0) / 3, 1) * 35;
   const rocScore = Math.min((trade.annualizedROC || 0) / 120, 1) * 25;
   const probScore = (trade.probabilityOfProfit || 0) * 25;
   const liqScore = Math.min((trade.totalVolume || 0) / ((trade.minOpenInterest || 1) * 3), 1) * 15;
-  return +(deltaScore + rocScore + probScore + liqScore).toFixed(2);
+  // IVR bonus: +10 when IVR >= 50 (high IV environment = better premium selling)
+  const ivrBonus = (opts?.ivRank != null && opts.ivRank >= 50) ? 10 : 0;
+  // Win Rate bonus: +10 when historical backtest win rate >= 60%
+  const winRateBonus = (opts?.winRate != null && opts.winRate >= 0.60) ? 10 : 0;
+  return +(deltaScore + rocScore + probScore + liqScore + ivrBonus + winRateBonus).toFixed(2);
 }
 
 function generateDemoData(): StrategyTrade[] {
@@ -469,6 +473,80 @@ export async function registerRoutes(
       res.json({ picks, isPremium });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch top picks" });
+    }
+  });
+
+  // GET /api/pick-of-day — returns the single strongest trade (A+ signal)
+  app.get("/api/pick-of-day", async (_req, res) => {
+    try {
+      // Get all current scan results
+      let results = await storage.getAllResults();
+      if (results.length === 0) {
+        return res.json({ pick: null, winRate: null, tier: null, reason: null, message: "No scan data available yet.", criteria: { minScore: 75, minIVRank: 0, noEarnings: true, minPOP: 0.65 }, alternates: 0 });
+      }
+
+      // Enrich with earnings + IVR
+      results = enrichTradesWithEarnings(results);
+      results = enrichTradesWithIVRank(results);
+
+      // Recompute scores with IVR + win rate bonuses
+      for (const trade of results) {
+        const ivRank = (trade as any).ivRank ?? null;
+        const winRate = getHistoricalWinRate(trade.underlyingTicker, trade.strategyType);
+        trade.compositeScore = computeScore(trade, { ivRank, winRate });
+      }
+
+      // Filter out earnings plays
+      let eligible = results.filter((t: any) => !t.hasEarningsBeforeExpiry);
+
+      // Sort by composite score descending
+      eligible.sort((a, b) => b.compositeScore - a.compositeScore);
+
+      // A+ threshold: score >= 75
+      const A_PLUS_THRESHOLD = 75;
+      const aPlusTrades = eligible.filter(t => t.compositeScore >= A_PLUS_THRESHOLD);
+
+      if (aPlusTrades.length === 0) {
+        // Return best available even if not A+
+        const best = eligible[0] || null;
+        const winRate = best ? getHistoricalWinRate(best.underlyingTicker, best.strategyType) : null;
+        return res.json({
+          pick: best,
+          winRate,
+          tier: best ? (best.compositeScore >= 70 ? "A" : best.compositeScore >= 60 ? "B+" : "B") : null,
+          reason: best ? `Strongest setup today — ${best.underlyingTicker} ${best.strategyType.replace(/_/g, " ")} with ${(best.probabilityOfProfit * 100).toFixed(0)}% POP and ${best.annualizedROC.toFixed(0)}% annualized ROC.` : null,
+          message: best ? "No A+ setups today — showing best available." : "No eligible trades found.",
+          criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65 },
+          alternates: 0,
+        });
+      }
+
+      // Pick the absolute best (single strongest play)
+      const pick = aPlusTrades[0];
+      const winRate = getHistoricalWinRate(pick.underlyingTicker, pick.strategyType);
+      const ivr = (pick as any).ivRank;
+
+      // Build reason string
+      const parts: string[] = [];
+      parts.push(`${pick.underlyingTicker} ${pick.strategyType.replace(/_/g, " ")}`);
+      parts.push(`${(pick.probabilityOfProfit * 100).toFixed(0)}% POP`);
+      parts.push(`${pick.annualizedROC.toFixed(0)}% annualized ROC`);
+      if (ivr != null && ivr >= 50) parts.push(`IVR ${Math.round(ivr)} (elevated)`);
+      if (winRate != null) parts.push(`${(winRate * 100).toFixed(0)}% historical win rate`);
+      const reason = `Top signal — ${parts.join(", ")}.`;
+
+      res.json({
+        pick,
+        winRate,
+        tier: "A+",
+        reason,
+        message: null,
+        criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65 },
+        alternates: aPlusTrades.length - 1,
+      });
+    } catch (err) {
+      console.error("Pick of day error:", err);
+      res.status(500).json({ error: "Failed to compute pick of the day" });
     }
   });
 

@@ -1962,13 +1962,13 @@ export default function Dashboard() {
           <div className="flex items-start gap-2">
             <Info className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
             <div className="text-xs text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Scoring: </span>
-              Delta Z-Score (30%) measures premium richness vs. chain average.
-              Annualized ROC (20%) = net credit / max risk, annualized.
-              POP (20%) from delta-based estimation.
-              Liquidity (10%) from volume/OI ratio.
-              IV Rank bonus (+10) when IVR ≥ 50. Win Rate bonus (+10) when historical backtest ≥ 60%.
-              Click any card to expand. Star to add to watchlist.
+              <span className="font-medium text-foreground">Scoring (max 120): </span>
+              Delta Z-Score (35 pts) measures premium richness vs. chain average.
+              Annualized ROC (25 pts) = net credit / max risk, annualized.
+              POP (25 pts) from delta-based estimation.
+              Liquidity (15 pts) from volume/OI ratio.
+              IVR bonus (+10 pts) when IVR ≥ 50. Win Rate bonus (+10 pts) when historical backtest ≥ 60%.
+              A+ signal = score ≥ 75. Click any card to expand. Star to add to watchlist.
             </div>
           </div>
         </Card>

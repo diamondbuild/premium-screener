@@ -2,7 +2,8 @@ import type { StrategyTrade, OptionLeg } from "@shared/schema";
 import { storage } from "./storage";
 import { execFileSync, execFile } from "child_process";
 import { promisify } from "util";
-import { storeAtmIV } from "./iv-rank";
+import { storeAtmIV, getIVRank } from "./iv-rank";
+import { getHistoricalWinRate } from "./backtester";
 import https from "https";
 
 const execFileAsync = promisify(execFile);
@@ -360,12 +361,16 @@ function makeLegFromPolygon(opt: PolygonOption, action: "sell" | "buy"): OptionL
   };
 }
 
-function computeScore(trade: Partial<StrategyTrade>): number {
+function computeScore(trade: Partial<StrategyTrade>, opts?: { ivRank?: number | null; winRate?: number | null }): number {
   const deltaScore = Math.min(Math.abs(trade.deltaZScore || 0) / 3, 1) * 35;
   const rocScore = Math.min((trade.annualizedROC || 0) / 120, 1) * 25;
   const probScore = (trade.probabilityOfProfit || 0) * 25;
   const liqScore = Math.min((trade.totalVolume || 0) / ((trade.minOpenInterest || 1) * 3), 1) * 15;
-  return +(deltaScore + rocScore + probScore + liqScore).toFixed(2);
+  // IVR bonus: +10 when IVR >= 50 (high IV environment = better premium selling)
+  const ivrBonus = (opts?.ivRank != null && opts.ivRank >= 50) ? 10 : 0;
+  // Win Rate bonus: +10 when historical backtest win rate >= 60%
+  const winRateBonus = (opts?.winRate != null && opts.winRate >= 0.60) ? 10 : 0;
+  return +(deltaScore + rocScore + probScore + liqScore + ivrBonus + winRateBonus).toFixed(2);
 }
 
 function computeZScores(opts: PolygonOption[]): Map<string, number> {
@@ -831,6 +836,16 @@ async function scanTicker(
       const trade = buildIronCondor(putSellOpt, putBuyOpt, callSellOpt, callBuyOpt, pz, cz, minOI / 2, minPOP);
       if (trade) results.push(trade);
     }
+
+    // ── Enrich scores with IVR + historical win rate bonuses ──
+    try {
+      const ivData = getIVRank(ticker);
+      const ivRank = ivData?.ivRank ?? null;
+      for (const trade of results) {
+        const winRate = getHistoricalWinRate(ticker, trade.strategyType);
+        trade.compositeScore = computeScore(trade, { ivRank, winRate });
+      }
+    } catch (e) { /* non-critical — keep base scores */ }
 
   } catch (err) {
     console.error(`Error scanning ${ticker}:`, err);
