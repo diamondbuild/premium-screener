@@ -43,7 +43,7 @@ export default function AuthPage() {
   };
 
   const features = [
-    { icon: TrendingUp, title: "497 Tickers Scanned", desc: "Full S&P 500 universe, every trading day" },
+    { icon: TrendingUp, title: "500+ Tickers Scanned", desc: "Full S&P 500 + NASDAQ 100 universe, every trading day" },
     { icon: Target, title: "4 Premium Strategies", desc: "CSPs, Put Credit Spreads, Strangles, Iron Condors" },
     { icon: BarChart3, title: "Backtesting Engine", desc: "Test strategies against historical data" },
     { icon: Zap, title: "IV Rank & Earnings", desc: "Know when volatility is elevated" },
@@ -70,7 +70,7 @@ export default function AuthPage() {
             Find the highest-probability<br />options trades, daily.
           </h2>
           <p className="text-zinc-400 text-lg mb-10">
-            Sell premium with confidence. Our scanner analyzes 497 tickers every morning and ranks trades by composite score.
+            Sell premium with confidence. Our scanner analyzes 500+ tickers every morning and ranks trades by composite score.
           </p>
 
           <div className="grid grid-cols-2 gap-4">

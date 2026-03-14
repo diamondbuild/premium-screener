@@ -44,7 +44,7 @@ async function ensurePrice(): Promise<string> {
   if (!product) {
     product = await s.products.create({
       name: PRODUCT_NAME,
-      description: "Full access to Premium Screener: 497-ticker live scans, 4 strategies, backtesting, IV rank, trade journal, alerts, and more.",
+      description: "Full access to Premium Screener: 500+ ticker live scans (S&P 500 + NASDAQ 100), 4 strategies, backtesting, IV rank, trade journal, alerts, and more.",
     });
   }
 

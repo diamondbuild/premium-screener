@@ -7,85 +7,72 @@ import https from "https";
 
 const execFileAsync = promisify(execFile);
 
-// ── Full S&P 500 embedded fallback list (~497 tickers) ──
-const SP500_TICKERS_EMBEDDED = [
-  "AAPL", "ABBV", "ABT", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL",
-  "AIG", "AIZ", "AJG", "AKAM", "ALB", "ALGN", "ALL", "ALLE", "AMAT", "AMCR", "AMD", "AME",
-  "AMGN", "AMP", "AMT", "AMZN", "ANET", "ANSS", "AON", "AOS", "APA", "APD", "APH", "APTV",
-  "ARE", "ATO", "ATVI", "AVB", "AVGO", "AVY", "AWK", "AXP", "AZO", "BA", "BAC", "BAX", "BBWI",
-  "BBY", "BDX", "BEN", "BF.B", "BG", "BIIB", "BIO", "BK", "BKNG", "BKR", "BLDR", "BLK", "BMY",
-  "BR", "BRK.B", "BRO", "BSX", "BWA", "BXP", "C", "CAG", "CAH", "CARR", "CAT", "CB", "CBOE",
-  "CBRE", "CCI", "CCL", "CDAY", "CDNS", "CDW", "CE", "CEG", "CF", "CFG", "CHD", "CHRW", "CHTR",
-  "CI", "CINF", "CL", "CLX", "CMA", "CMCSA", "CME", "CMG", "CMI", "CMS", "CNC", "CNP", "COF",
-  "COO", "COP", "COR", "COST", "CPAY", "CPB", "CPRT", "CPT", "CRL", "CRM", "CRWD", "CSCO",
-  "CSGP", "CSX", "CTAS", "CTLT", "CTRA", "CTSH", "CTVA", "CVS", "CVX", "CZR", "D", "DAL", "DAY",
-  "DD", "DE", "DECK", "DFS", "DG", "DGX", "DHI", "DHR", "DIS", "DLTR", "DOV", "DOW", "DPZ",
-  "DRI", "DTE", "DUK", "DVA", "DVN", "DXCM", "EA", "EBAY", "ECL", "ED", "EFX", "EG", "EIX",
-  "EL", "EMN", "EMR", "ENPH", "EOG", "EPAM", "EQIX", "EQR", "EQT", "ES", "ESS", "ETN", "ETR",
-  "EVRG", "EW", "EXC", "EXPD", "EXPE", "EXR", "F", "FANG", "FAST", "FCNCA", "FCX", "FDS", "FDX",
-  "FE", "FFIV", "FI", "FICO", "FIS", "FISV", "FITB", "FLT", "FMC", "FOX", "FOXA", "FRT", "FSLR",
-  "FTNT", "FTV", "GD", "GDDY", "GE", "GEHC", "GEN", "GILD", "GIS", "GL", "GLW", "GM", "GNRC",
-  "GOOG", "GOOGL", "GPC", "GPN", "GRMN", "GS", "GWW", "HAL", "HAS", "HBAN", "HCA", "HD", "HOLX",
-  "HON", "HPE", "HPQ", "HRL", "HSIC", "HST", "HSY", "HUBB", "HUM", "HWM", "IBM", "ICE", "IDXX",
-  "IEX", "IFF", "ILMN", "INCY", "INTC", "INTU", "INVH", "IP", "IPG", "IQV", "IR", "IRM", "ISRG",
-  "IT", "ITW", "IVZ", "J", "JBHT", "JBL", "JCI", "JKHY", "JNJ", "JNPR", "JPM", "K", "KDP",
-  "KEY", "KEYS", "KHC", "KIM", "KLAC", "KMB", "KMI", "KMX", "KO", "KR", "KVUE", "L", "LDOS",
-  "LEN", "LH", "LHX", "LIN", "LKQ", "LLY", "LMT", "LNT", "LOW", "LRCX", "LULU", "LUV", "LVS",
-  "LW", "LYB", "LYV", "MA", "MAA", "MAR", "MAS", "MCD", "MCHP", "MCK", "MCO", "MDLZ", "MDT",
-  "MET", "META", "MGM", "MHK", "MKC", "MKTX", "MLM", "MMC", "MMM", "MNST", "MO", "MOH", "MOS",
-  "MPC", "MPWR", "MRK", "MRNA", "MS", "MSCI", "MSFT", "MSI", "MTB", "MTCH", "MTD", "MU", "NCLH",
-  "NDAQ", "NDSN", "NEE", "NEM", "NFLX", "NI", "NKE", "NOC", "NOW", "NRG", "NSC", "NTAP", "NTRS",
-  "NUE", "NVDA", "NVR", "NWS", "NWSA", "NXPI", "O", "ODFL", "OKE", "OMC", "ON", "ORCL", "ORLY",
-  "OTIS", "OXY", "PANW", "PARA", "PAYC", "PAYX", "PCAR", "PCG", "PEG", "PEP", "PFE", "PFG",
-  "PG", "PGR", "PH", "PHM", "PKG", "PLD", "PM", "PNC", "PNR", "PNW", "PODD", "POOL", "PPG",
-  "PPL", "PRU", "PSA", "PSX", "PTC", "PVH", "PWR", "PXD", "PYPL", "QCOM", "QRVO", "RCL", "REG",
-  "REGN", "RF", "RHI", "RJF", "RL", "RMD", "ROK", "ROL", "ROP", "ROST", "RSG", "RTX", "RVTY",
-  "SBAC", "SBUX", "SCHW", "SEE", "SHW", "SJM", "SLB", "SMCI", "SNA", "SNPS", "SO", "SOLV",
+// ── S&P 500 + NASDAQ 100 merged universe (deduplicated, ~518 tickers) ──
+const UNIVERSE_TICKERS_EMBEDDED = [
+  "AAPL", "ABBV", "ABNB", "ABT", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL",
+  "AIG", "AIZ", "AJG", "AKAM", "ALB", "ALGN", "ALL", "ALLE", "ALNY", "AMAT", "AMCR", "AMD", "AME",
+  "AMGN", "AMP", "AMT", "AMZN", "ANET", "ANSS", "AON", "AOS", "APA", "APD", "APH", "APP", "APTV",
+  "ARE", "ARM", "ASML", "ATO", "ATVI", "AVB", "AVGO", "AVY", "AWK", "AXON", "AXP", "AZO",
+  "BA", "BAC", "BAX", "BBWI", "BBY", "BDX", "BEN", "BF.B", "BG", "BIIB", "BIO", "BK", "BKNG", "BKR",
+  "BLDR", "BLK", "BMY", "BR", "BRK.B", "BRO", "BSX", "BWA", "BXP",
+  "C", "CAG", "CAH", "CARR", "CAT", "CB", "CBOE", "CBRE", "CCEP", "CCI", "CCL", "CDAY", "CDNS", "CDW",
+  "CE", "CEG", "CF", "CFG", "CHD", "CHRW", "CHTR", "CI", "CINF", "CL", "CLX", "CMA", "CMCSA", "CME",
+  "CMG", "CMI", "CMS", "CNC", "CNP", "COF", "COO", "COP", "COR", "COST", "CPAY", "CPB", "CPRT", "CPT",
+  "CRL", "CRM", "CRWD", "CSCO", "CSGP", "CSX", "CTAS", "CTLT", "CTRA", "CTSH", "CTVA", "CVS", "CVX", "CZR",
+  "D", "DAL", "DASH", "DAY", "DD", "DDOG", "DE", "DECK", "DFS", "DG", "DGX", "DHI", "DHR", "DIS", "DLTR",
+  "DOV", "DOW", "DPZ", "DRI", "DTE", "DUK", "DVA", "DVN", "DXCM",
+  "EA", "EBAY", "ECL", "ED", "EFX", "EG", "EIX", "EL", "EMN", "EMR", "ENPH", "EOG", "EPAM", "EQIX",
+  "EQR", "EQT", "ES", "ESS", "ETN", "ETR", "EVRG", "EW", "EXC", "EXPD", "EXPE", "EXR",
+  "F", "FANG", "FAST", "FCNCA", "FCX", "FDS", "FDX", "FE", "FER", "FFIV", "FI", "FICO", "FIS", "FISV",
+  "FITB", "FLT", "FMC", "FOX", "FOXA", "FRT", "FSLR", "FTNT", "FTV",
+  "GD", "GDDY", "GE", "GEHC", "GEN", "GILD", "GIS", "GL", "GLW", "GM", "GNRC", "GOOG", "GOOGL",
+  "GPC", "GPN", "GRMN", "GS", "GWW",
+  "HAL", "HAS", "HBAN", "HCA", "HD", "HOLX", "HON", "HPE", "HPQ", "HRL", "HSIC", "HST", "HSY",
+  "HUBB", "HUM", "HWM",
+  "IBM", "ICE", "IDXX", "IEX", "IFF", "ILMN", "INCY", "INSM", "INTC", "INTU", "INVH", "IP", "IPG",
+  "IQV", "IR", "IRM", "ISRG", "IT", "ITW", "IVZ",
+  "J", "JBHT", "JBL", "JCI", "JKHY", "JNJ", "JNPR", "JPM",
+  "K", "KDP", "KEY", "KEYS", "KHC", "KIM", "KLAC", "KMB", "KMI", "KMX", "KO", "KR", "KVUE",
+  "L", "LDOS", "LEN", "LH", "LHX", "LIN", "LKQ", "LLY", "LMT", "LNT", "LOW", "LRCX", "LULU",
+  "LUV", "LVS", "LW", "LYB", "LYV",
+  "MA", "MAA", "MAR", "MAS", "MCD", "MCHP", "MCK", "MCO", "MDLZ", "MDT", "MELI", "MET", "META",
+  "MGM", "MHK", "MKC", "MKTX", "MLM", "MMC", "MMM", "MNST", "MO", "MOH", "MOS", "MPC", "MPWR",
+  "MRK", "MRNA", "MRVL", "MS", "MSCI", "MSFT", "MSI", "MSTR", "MTB", "MTCH", "MTD", "MU",
+  "NCLH", "NDAQ", "NDSN", "NEE", "NEM", "NFLX", "NI", "NKE", "NOC", "NOW", "NRG", "NSC", "NTAP",
+  "NTRS", "NUE", "NVDA", "NVR", "NWS", "NWSA", "NXPI",
+  "O", "ODFL", "OKE", "OMC", "ON", "ORCL", "ORLY", "OTIS", "OXY",
+  "PANW", "PARA", "PAYC", "PAYX", "PCAR", "PCG", "PDD", "PEG", "PEP", "PFE", "PFG", "PG", "PGR",
+  "PH", "PHM", "PKG", "PLD", "PLTR", "PM", "PNC", "PNR", "PNW", "PODD", "POOL", "PPG", "PPL",
+  "PRU", "PSA", "PSX", "PTC", "PVH", "PWR", "PXD", "PYPL",
+  "QCOM", "QRVO",
+  "RCL", "REG", "REGN", "RF", "RHI", "RJF", "RL", "RMD", "ROK", "ROL", "ROP", "ROST", "RSG", "RTX", "RVTY",
+  "SBAC", "SBUX", "SCHW", "SEE", "SHOP", "SHW", "SJM", "SLB", "SMCI", "SNA", "SNPS", "SO", "SOLV",
   "SPG", "SPGI", "SRE", "STE", "STLD", "STT", "STX", "STZ", "SWK", "SWKS", "SYF", "SYK", "SYY",
-  "T", "TAP", "TDG", "TDY", "TECH", "TEL", "TER", "TFC", "TFX", "TGT", "TJX", "TMO", "TMUS",
-  "TPR", "TRGP", "TRMB", "TROW", "TRV", "TSCO", "TSLA", "TSN", "TT", "TTWO", "TXN", "TXT",
-  "TYL", "UAL", "UBER", "UDR", "UHS", "ULTA", "UNH", "UNP", "UPS", "URI", "USB", "V", "VICI",
-  "VLO", "VLTO", "VMC", "VRSK", "VRSN", "VRTX", "VTR", "VTRS", "VZ", "WAB", "WAT", "WBA", "WBD",
-  "WDC", "WEC", "WELL", "WFC", "WM", "WMB", "WMT", "WRB", "WRK", "WST", "WTW", "WY", "WYNN",
-  "XEL", "XOM", "XRAY", "XYL", "YUM", "ZBH", "ZBRA", "ZION", "ZTS"
+  "T", "TAP", "TDG", "TDY", "TEAM", "TECH", "TEL", "TER", "TFC", "TFX", "TGT", "TJX", "TMO", "TMUS",
+  "TPR", "TRGP", "TRI", "TRMB", "TROW", "TRV", "TSCO", "TSLA", "TSN", "TT", "TTWO", "TXN", "TXT",
+  "TYL", "UAL", "UBER", "UDR", "UHS", "ULTA", "UNH", "UNP", "UPS", "URI", "USB",
+  "V", "VICI", "VLO", "VLTO", "VMC", "VRSK", "VRSN", "VRTX", "VTR", "VTRS", "VZ",
+  "WAB", "WAT", "WBA", "WBD", "WDAY", "WDC", "WEC", "WELL", "WFC", "WM", "WMB", "WMT", "WRB", "WRK",
+  "WST", "WTW", "WY", "WYNN",
+  "XEL", "XOM", "XRAY", "XYL",
+  "YUM",
+  "ZBH", "ZBRA", "ZION", "ZS", "ZTS"
 ];
 
-// ── NASDAQ-100 embedded list (101 tickers — GOOG + GOOGL both listed) ──
-const NASDAQ100_TICKERS_EMBEDDED = [
-  "AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "ALNY", "AMAT", "AMD", "AMGN", "AMZN",
-  "APP", "ARM", "ASML", "AVGO", "AXON", "BKR", "BKNG", "CCEP", "CDNS", "CEG", "CHTR", "CMCSA",
-  "COST", "CPRT", "CRWD", "CSCO", "CSGP", "CSX", "CTAS", "CTSH", "DASH", "DDOG", "DXCM", "EA",
-  "EXC", "FANG", "FAST", "FER", "FTNT", "GEHC", "GILD", "GOOG", "GOOGL", "HON", "IDXX", "INSM",
-  "INTC", "INTU", "ISRG", "KDP", "KHC", "KLAC", "LIN", "LRCX", "MAR", "MCHP", "MDLZ", "MELI",
-  "META", "MNST", "MPWR", "MRVL", "MSFT", "MSTR", "MU", "NFLX", "NVDA", "NXPI", "ODFL", "ORLY",
-  "PANW", "PAYX", "PCAR", "PDD", "PEP", "PLTR", "PYPL", "QCOM", "REGN", "ROP", "ROST", "SBUX",
-  "SHOP", "SNPS", "STX", "TEAM", "TMUS", "TRI", "TSLA", "TTWO", "TXN", "VRSK", "VRTX", "WBD",
-  "WDAY", "WDC", "WMT", "XEL", "ZS"
-];
-
-// ── Universe types ──
-export type Universe = "sp500" | "nasdaq100" | "both";
-
-export const UNIVERSE_LABELS: Record<Universe, string> = {
-  sp500: "S&P 500",
-  nasdaq100: "NASDAQ-100",
-  both: "S&P 500 + NASDAQ-100",
-};
-
-// ── Dynamic ticker source: tries SPY ETF holdings first, falls back to embedded ──
+// ── Dynamic ticker source: tries SPY+QQQ ETF holdings first, falls back to embedded ──
 let cachedTickers: string[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-function fetchSPYHoldings(): string[] | null {
+function fetchETFHoldings(etfSymbol: string, etfName: string): Set<string> | null {
   try {
     const payload = JSON.stringify({
       source_id: "finance",
       tool_name: "finance_etf_holdings",
       arguments: {
-        ticker_symbols: ["SPY"],
-        ticker_names: ["SPDR S&P 500 ETF Trust"],
-        query: "List all holdings in SPY ETF with their ticker symbols",
+        ticker_symbols: [etfSymbol],
+        ticker_names: [etfName],
+        query: `List all holdings in ${etfSymbol} ETF with their ticker symbols`,
       },
     });
     const raw = execFileSync("external-tool", ["call", payload], {
@@ -93,73 +80,61 @@ function fetchSPYHoldings(): string[] | null {
       encoding: "utf-8",
     });
     const parsed = JSON.parse(raw);
-    // Extract tickers from the response content
     let content = parsed?.result?.content || parsed?.content || "";
     if (typeof content === "string") {
-      // The response is usually markdown with ticker symbols — extract them
       const tickerRegex = /\b([A-Z]{1,5}(?:\.[A-Z])?)\b/g;
       const found = new Set<string>();
       let match;
       while ((match = tickerRegex.exec(content)) !== null) {
         const t = match[1];
-        // Filter to only likely tickers (skip common words)
-        const skipWords = new Set(["ETF", "SPY", "USD", "THE", "FOR", "AND", "ARE", "NOT", "ALL", "TOP", "HAS", "NEW", "INC", "LTD", "EST", "AVG"]);
+        const skipWords = new Set(["ETF", "SPY", "QQQ", "USD", "THE", "FOR", "AND", "ARE", "NOT", "ALL", "TOP", "HAS", "NEW", "INC", "LTD", "EST", "AVG"]);
         if (!skipWords.has(t) && t.length >= 1 && t.length <= 5) {
           found.add(t);
         }
       }
-      if (found.size >= 400) {
-        console.log(`Dynamic SPY holdings: ${found.size} tickers fetched`);
-        return Array.from(found).sort();
+      if (found.size >= 50) {
+        console.log(`Dynamic ${etfSymbol} holdings: ${found.size} tickers fetched`);
+        return found;
       }
     }
     return null;
   } catch (err: any) {
-    console.warn("Failed to fetch SPY holdings dynamically:", err?.message?.slice(0, 100));
+    console.warn(`Failed to fetch ${etfSymbol} holdings dynamically:`, err?.message?.slice(0, 100));
     return null;
   }
 }
 
-export function getSP500Tickers(): string[] {
+export function getUniverseTickers(): string[] {
   const now = Date.now();
   if (cachedTickers && (now - cacheTimestamp) < CACHE_TTL) {
     return cachedTickers;
   }
 
-  // Try dynamic fetch
-  const dynamic = fetchSPYHoldings();
-  if (dynamic && dynamic.length >= 400) {
-    cachedTickers = dynamic;
+  // Try dynamic fetch of SPY + QQQ and merge
+  const spyHoldings = fetchETFHoldings("SPY", "SPDR S&P 500 ETF Trust");
+  if (spyHoldings && spyHoldings.size >= 400) {
+    // Also try QQQ to ensure NASDAQ 100 coverage
+    const qqqHoldings = fetchETFHoldings("QQQ", "Invesco QQQ Trust");
+    const merged = new Set(spyHoldings);
+    if (qqqHoldings) {
+      for (const t of qqqHoldings) merged.add(t);
+    }
+    cachedTickers = Array.from(merged).sort();
     cacheTimestamp = now;
-    console.log(`Using dynamic SPY ETF holdings: ${dynamic.length} tickers`);
-    return dynamic;
+    console.log(`Using dynamic SPY+QQQ ETF holdings: ${cachedTickers.length} tickers`);
+    return cachedTickers;
   }
 
   // Fallback to embedded list
-  cachedTickers = SP500_TICKERS_EMBEDDED;
+  cachedTickers = UNIVERSE_TICKERS_EMBEDDED;
   cacheTimestamp = now;
-  console.log(`Using embedded S&P 500 list: ${SP500_TICKERS_EMBEDDED.length} tickers`);
-  return SP500_TICKERS_EMBEDDED;
+  console.log(`Using embedded S&P 500 + NASDAQ 100 list: ${UNIVERSE_TICKERS_EMBEDDED.length} tickers`);
+  return UNIVERSE_TICKERS_EMBEDDED;
 }
 
-// Keep backward-compatible export
-const SP500_TICKERS = SP500_TICKERS_EMBEDDED;
-
-// ── Get tickers for a given universe (deduplicated, sorted) ──
-export function getTickersForUniverse(universe: Universe): string[] {
-  switch (universe) {
-    case "sp500":
-      return getSP500Tickers();
-    case "nasdaq100":
-      return [...NASDAQ100_TICKERS_EMBEDDED].sort();
-    case "both": {
-      const combined = new Set([...getSP500Tickers(), ...NASDAQ100_TICKERS_EMBEDDED]);
-      return Array.from(combined).sort();
-    }
-    default:
-      return getSP500Tickers();
-  }
-}
+// Backward-compatible aliases
+export const getSP500Tickers = getUniverseTickers;
+const SP500_TICKERS = UNIVERSE_TICKERS_EMBEDDED;
 
 // ── Polygon API key (Options Developer plan — 15-min delayed) ──
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY || "ySa69UMk92kM1oE7j227SiIK6WfoMh21";
@@ -815,13 +790,12 @@ export async function runFullScan(
   maxDTE: number = 60,
   minOI: number = 100,
   minPOP: number = 0.65,
-  universe: Universe = "sp500",
 ): Promise<void> {
   idCounter = 0;
   const startTime = Date.now();
   const allResults: StrategyTrade[] = [];
-  const tickers = getTickersForUniverse(universe);
-  const scanId = storage.beginScan(mode, tickers.length, universe);
+  const tickers = getUniverseTickers();
+  const scanId = storage.beginScan(mode, tickers.length);
   let scannedCount = 0;
 
   storage.setScanStatus({
