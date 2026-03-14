@@ -407,11 +407,9 @@ export async function registerRoutes(
   }
 
   // ── Refresh earnings on startup (non-blocking) ──
-  try {
-    refreshEarningsData();
-  } catch (err) {
+  refreshEarningsData().catch(err => {
     console.error("Earnings refresh failed on startup:", err);
-  }
+  });
 
   // ── IV Rank backfill (non-blocking, runs in background) ──
   if (LIVE_SCAN) {
@@ -515,7 +513,7 @@ export async function registerRoutes(
     res.json({ message: "Scan started", mode: "live" });
     runFullScan("manual").then(() => {
       // Refresh earnings data after scan completes
-      try { refreshEarningsData(); } catch (e) { console.error("Post-scan earnings refresh failed:", e); }
+      refreshEarningsData().catch(e => console.error("Post-scan earnings refresh failed:", e));
     }).catch(err => {
       console.error("Live rescan failed, using demo fallback:", err);
       const demoData = generateDemoData();
@@ -688,9 +686,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/earnings/refresh", (_req, res) => {
+  app.post("/api/earnings/refresh", async (_req, res) => {
     try {
-      const count = refreshEarningsData();
+      const count = await refreshEarningsData();
       res.json({ success: true, entriesCached: count });
     } catch (err) {
       res.status(500).json({ error: "Failed to refresh earnings" });

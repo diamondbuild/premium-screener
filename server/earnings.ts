@@ -1,4 +1,3 @@
-import { execFileSync } from "child_process";
 import db from "./db";
 
 // ── Types ──
@@ -56,126 +55,86 @@ const getAllUpcoming = db.prepare(`
   ORDER BY earnings_date ASC
 `);
 
-// ── Parse earnings text from finance API ──
-function parseEarningsText(text: string): EarningsDate[] {
-  const results: EarningsDate[] = [];
-  const blocks = text.split(/\*\*/).filter(Boolean);
-
-  let currentTicker = "";
-  let currentDate = "";
-  let currentTime = "";
-  let currentFiscal = "";
-  let currentStatus = "";
-
-  for (const block of blocks) {
-    // Ticker line: "Apple Inc. (AAPL)" or just ticker pattern
-    const tickerMatch = block.match(/\(([A-Z.]{1,10})\)/);
-    if (tickerMatch) {
-      // If we had a previous entry, save it
-      if (currentTicker && currentDate) {
-        results.push({
-          ticker: currentTicker,
-          earningsDate: currentDate,
-          earningsTime: currentTime,
-          fiscalPeriod: currentFiscal,
-          status: currentStatus,
-        });
+// ── Fetch earnings for a single date from Nasdaq API ──
+async function fetchEarningsForDate(dateStr: string): Promise<EarningsDate[]> {
+  try {
+    const resp = await fetch(
+      `https://api.nasdaq.com/api/calendar/earnings?date=${dateStr}`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; PremiumScreener/1.0)",
+          Accept: "application/json",
+        },
       }
-      currentTicker = tickerMatch[1];
-      currentDate = "";
-      currentTime = "";
-      currentFiscal = "";
-      currentStatus = "";
-    }
-
-    // Parse the data lines
-    const dateMatch = block.match(/Earnings Date:\s*(\d{4}-\d{2}-\d{2})\s+at\s+([^\n]+)/);
-    if (dateMatch) {
-      currentDate = dateMatch[1];
-      currentTime = dateMatch[2].trim();
-    }
-
-    const fiscalMatch = block.match(/Fiscal Period:\s*([^\n]+)/);
-    if (fiscalMatch) {
-      currentFiscal = fiscalMatch[1].trim();
-    }
-
-    const statusMatch = block.match(/Status:\s*(\w+)/);
-    if (statusMatch) {
-      currentStatus = statusMatch[1].trim();
-    }
-  }
-
-  // Don't forget the last entry
-  if (currentTicker && currentDate) {
-    results.push({
-      ticker: currentTicker,
-      earningsDate: currentDate,
-      earningsTime: currentTime,
-      fiscalPeriod: currentFiscal,
-      status: currentStatus,
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const rows = data?.data?.rows || [];
+    return rows.map((r: any) => {
+      const timeStr =
+        r.time === "time-pre-market"
+          ? "Before Market Open"
+          : r.time === "time-after-hours"
+          ? "After Market Close"
+          : r.time === "time-not-supplied"
+          ? "TBD"
+          : r.time || "TBD";
+      return {
+        ticker: r.symbol,
+        earningsDate: dateStr,
+        earningsTime: timeStr,
+        fiscalPeriod: r.fiscalQuarterEnding || "",
+        status: "Upcoming",
+      };
     });
+  } catch {
+    return [];
   }
-
-  return results;
-}
-
-// ── Call finance API via external-tool CLI ──
-function callFinanceTool(toolName: string, args: Record<string, any>): any {
-  const params = JSON.stringify({
-    source_id: "finance",
-    tool_name: toolName,
-    arguments: args,
-  });
-  const result = execFileSync("external-tool", ["call", params], {
-    encoding: "utf-8",
-    timeout: 60_000,
-  });
-  return JSON.parse(result);
 }
 
 // ── Fetch earnings calendar for a date range ──
-function fetchEarningsCalendar(startDate: string, endDate: string): EarningsDate[] {
-  try {
-    console.log(`Fetching earnings calendar: ${startDate} to ${endDate}`);
-    const response = callFinanceTool("finance_earnings_schedule", {
-      ticker_symbols: [],
-      start_date: startDate,
-      end_date: endDate,
-    });
+async function fetchEarningsCalendar(
+  startDate: string,
+  endDate: string
+): Promise<EarningsDate[]> {
+  console.log(`Fetching earnings calendar: ${startDate} to ${endDate}`);
+  const all: EarningsDate[] = [];
+  const start = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
 
-    // Response is { content: "[{...}]" } or similar
-    let contentStr = response?.content || response?.result?.content || "";
-    if (typeof contentStr !== "string") {
-      contentStr = JSON.stringify(contentStr);
+  // Iterate weekdays only (earnings never report on weekends)
+  const cursor = new Date(start);
+  const datesToFetch: string[] = [];
+  while (cursor <= end) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) {
+      datesToFetch.push(cursor.toISOString().split("T")[0]);
     }
-
-    // Parse the JSON array if it's wrapped
-    let textContent = contentStr;
-    try {
-      const parsed = JSON.parse(contentStr);
-      if (Array.isArray(parsed)) {
-        textContent = parsed.map((p: any) => p.content || "").join("\n");
-      } else if (parsed.content) {
-        textContent = parsed.content;
-      }
-    } catch {
-      // Already a string, use as-is
-    }
-
-    const entries = parseEarningsText(textContent);
-    console.log(`Parsed ${entries.length} earnings entries from calendar`);
-    return entries;
-  } catch (err: any) {
-    console.error("Failed to fetch earnings calendar:", err?.message);
-    return [];
+    cursor.setDate(cursor.getDate() + 1);
   }
+
+  // Fetch in parallel batches of 5 to be polite
+  const BATCH = 5;
+  for (let i = 0; i < datesToFetch.length; i += BATCH) {
+    const batch = datesToFetch.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(fetchEarningsForDate));
+    for (const r of results) all.push(...r);
+    // Small delay between batches
+    if (i + BATCH < datesToFetch.length) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  console.log(
+    `Fetched ${all.length} earnings entries across ${datesToFetch.length} trading days`
+  );
+  return all;
 }
 
 // ── Main: refresh earnings data ──
 // Fetches earnings calendar for the next 75 days (covers max DTE of 60 + buffer)
 // Caches in SQLite with 12hr TTL to avoid redundant API calls
-export function refreshEarningsData(): number {
+export async function refreshEarningsData(): Promise<number> {
   const now = new Date();
   const meta = getMeta.get() as any;
 
@@ -192,7 +151,7 @@ export function refreshEarningsData(): number {
   const startDate = now.toISOString().split("T")[0];
   const endDate = new Date(now.getTime() + 75 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-  const entries = fetchEarningsCalendar(startDate, endDate);
+  const entries = await fetchEarningsCalendar(startDate, endDate);
 
   if (entries.length === 0) {
     console.warn("No earnings data fetched — keeping existing cache");
