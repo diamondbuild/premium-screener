@@ -106,13 +106,25 @@ async function fetchHistoricalOHLCV(ticker: string, months: number): Promise<OHL
 // ── Simulation helpers ──
 
 /**
- * Scale strike prices proportionally to the entry underlying price.
+ * Scale PUT strike prices proportionally to the entry underlying price.
  * If the current trade is for AAPL at $178 with a 175 put strike (1.69% OTM),
  * and 3 months ago AAPL was at $165, the simulated strike would be ~$162.
+ * Puts are OTM below the underlying.
  */
 function scaleStrike(currentStrike: number, currentUnderlying: number, historicalUnderlying: number): number {
   const otmPct = (currentUnderlying - currentStrike) / currentUnderlying;
   return +(historicalUnderlying * (1 - otmPct)).toFixed(2);
+}
+
+/**
+ * Scale CALL strike prices proportionally to the entry underlying price.
+ * Calls are OTM above the underlying, so we need the inverse formula.
+ * If current underlying is $100 and call sell strike is $105 (5% OTM above),
+ * and historically the stock was $80, the simulated strike would be $84.
+ */
+function scaleCallStrike(currentStrike: number, currentUnderlying: number, historicalUnderlying: number): number {
+  const otmPct = (currentStrike - currentUnderlying) / currentUnderlying;
+  return +(historicalUnderlying * (1 + otmPct)).toFixed(2);
 }
 
 /**
@@ -312,8 +324,8 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestResult>
         break;
       }
       case "call_credit_spread": {
-        strikeUsed = scaleStrike(req.strikePrice, currentUnderlying, entryPrice);
-        strike2Used = scaleStrike(req.strikePrice2!, currentUnderlying, entryPrice);
+        strikeUsed = scaleCallStrike(req.strikePrice, currentUnderlying, entryPrice);
+        strike2Used = scaleCallStrike(req.strikePrice2!, currentUnderlying, entryPrice);
         creditUsed = scaleCredit(req.netCredit, currentUnderlying, entryPrice);
         result = simulateCCS(entryPrice, exitPrice, maxPrice, strikeUsed, strike2Used, creditUsed);
         break;
