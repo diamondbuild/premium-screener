@@ -260,7 +260,7 @@ export default function LandingPage() {
   };
 
   const features = [
-    { icon: Shield, title: "4 Premium Strategies", desc: "Cash Secured Puts, Put Credit Spreads, Strangles, Iron Condors. Each optimized for premium sellers." },
+    { icon: Shield, title: "5 Premium Strategies", desc: "Cash Secured Puts, Put Credit Spreads, Call Credit Spreads, Strangles, Iron Condors. Each optimized for premium sellers." },
     { icon: Activity, title: "Delta Z-Score Ranking", desc: "Our proprietary scoring measures how rich current premiums are vs. the chain average. Higher Z = fatter premium." },
     { icon: TrendingUp, title: "IV Rank & Earnings Integration", desc: "Know instantly if IV is elevated (ideal for selling) and whether earnings fall before expiry." },
     { icon: Clock, title: "One-Click Backtesting", desc: "Simulate any trade over 3, 6, or 12 months of price history. See win rate, P&L curve, Sharpe ratio." },
@@ -271,8 +271,8 @@ export default function LandingPage() {
   ];
 
   const faqs = [
-    { q: "What strategies does it cover?", a: "Cash Secured Puts (CSPs), Put Credit Spreads, Strangles, and Iron Condors — the four core premium-selling strategies." },
-    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (35%), Annualized ROC (25%), Probability of Profit (25%), and Liquidity (15%). Each factor is normalized across the full scan universe before weighting." },
+    { q: "What strategies does it cover?", a: "Cash Secured Puts (CSPs), Put Credit Spreads (PCS), Call Credit Spreads (CCS), Strangles, and Iron Condors — five core premium-selling strategies covering both bullish and bearish credit plays." },
+    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (30%), Annualized ROC (20%), Probability of Profit (20%), and Liquidity (10%), plus bonus points for high IV Rank (+10 when IVR ≥ 50) and strong historical win rate (+10 when backtest ≥ 60%)." },
     { q: "How often is data updated?", a: "Every trading day. Scans run during market hours so you get fresh ranked trade ideas by market open." },
     { q: "Can I try it for free?", a: "Yes. Create a free account to see limited results with some details redacted. Upgrade anytime to unlock everything." },
     { q: "What's your refund policy?", a: "Cancel anytime, no questions asked. You keep access through the end of your billing period." },
@@ -401,7 +401,7 @@ export default function LandingPage() {
               <div className="relative">
                 <div className="text-center mb-6"><div className="flex items-baseline justify-center gap-1 mb-1"><span className="text-4xl md:text-5xl font-bold text-white">$29</span><span className="text-zinc-400 text-sm">/month</span></div></div>
                 <div className="space-y-3 mb-8">
-                  {["Full S&P 500 + NASDAQ 100 scans every trading day", "All 4 premium strategies", "Backtesting engine", "P&L diagrams", "Trade journal", "Watchlist & alerts", "IV Rank & earnings data"].map((item) => (
+                  {["Full S&P 500 + NASDAQ 100 scans every trading day", "All 5 premium strategies", "Backtesting engine", "P&L diagrams", "Trade journal", "Watchlist & alerts", "IV Rank & earnings data"].map((item) => (
                     <div key={item} className="flex items-start gap-3"><Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" /><span className="text-sm text-zinc-300">{item}</span></div>
                   ))}
                 </div>
