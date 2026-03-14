@@ -17,6 +17,10 @@ export interface User {
   createdAt: string;
 }
 
+// ── Owner Bypass ──
+// Owner emails always get full premium access regardless of Stripe status
+const OWNER_EMAILS = ["joey19154@gmail.com"];
+
 // ── DB Setup ──
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -56,12 +60,13 @@ const findUserByStripeCustomer = db.prepare(
 
 function rowToUser(row: any): User | null {
   if (!row) return null;
+  const isOwner = OWNER_EMAILS.includes(row.email?.toLowerCase());
   return {
     id: row.id,
     email: row.email,
     passwordHash: row.password_hash,
     displayName: row.display_name,
-    subscriptionStatus: row.subscription_status || "free",
+    subscriptionStatus: isOwner ? "active" : (row.subscription_status || "free"),
     stripeCustomerId: row.stripe_customer_id,
     stripeSubscriptionId: row.stripe_subscription_id,
     stripePriceId: row.stripe_price_id,
