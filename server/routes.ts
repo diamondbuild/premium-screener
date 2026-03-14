@@ -1,1 +1,1 @@
-placeholder
+{{FILE:/home/user/workspace/push_routes.txt}}
