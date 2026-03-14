@@ -4,7 +4,7 @@ import db from "./db";
 // ── Types ──
 export interface BacktestRequest {
   ticker: string;
-  strategyType: "cash_secured_put" | "put_credit_spread" | "strangle" | "iron_condor";
+  strategyType: "cash_secured_put" | "put_credit_spread" | "call_credit_spread" | "strangle" | "iron_condor";
   // Trade parameters (from the current screener pick)
   strikePrice: number;       // Sell strike (CSP/PCS) or put sell strike (Strangle/IC)
   strikePrice2?: number;     // Buy strike (PCS) or call sell strike (Strangle/IC)
@@ -171,6 +171,32 @@ function simulatePCS(
 }
 
 /**
+ * Simulate a CCS trade: sell lower call, buy higher call.
+ * Max profit = net credit * 100; Max loss = (width - credit) * 100.
+ * Profitable if underlying stays below sell strike at expiration.
+ */
+function simulateCCS(
+  entryPrice: number, exitPrice: number, maxPrice: number,
+  sellStrike: number, buyStrike: number, credit: number
+): { pnl: number; outcome: "profit" | "loss" | "partial"; maxAdverse: number } {
+  const width = buyStrike - sellStrike;
+  const maxAdverse = ((maxPrice - entryPrice) / entryPrice) * 100;
+
+  if (exitPrice <= sellStrike) {
+    // Both expire OTM
+    return { pnl: credit * 100, outcome: "profit", maxAdverse };
+  } else if (exitPrice >= buyStrike) {
+    // Max loss
+    return { pnl: -(width - credit) * 100, outcome: "loss", maxAdverse };
+  } else {
+    // Between strikes — partial loss
+    const intrinsic = exitPrice - sellStrike;
+    const pnl = (credit - intrinsic) * 100;
+    return { pnl, outcome: pnl >= 0 ? "profit" : "loss", maxAdverse };
+  }
+}
+
+/**
  * Simulate a Strangle: sell OTM put + sell OTM call.
  * Profitable if price stays between put strike and call strike.
  */
@@ -283,6 +309,13 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestResult>
         strike2Used = scaleStrike(req.strikePrice2!, currentUnderlying, entryPrice);
         creditUsed = scaleCredit(req.netCredit, currentUnderlying, entryPrice);
         result = simulatePCS(entryPrice, exitPrice, minPrice, strikeUsed, strike2Used, creditUsed);
+        break;
+      }
+      case "call_credit_spread": {
+        strikeUsed = scaleStrike(req.strikePrice, currentUnderlying, entryPrice);
+        strike2Used = scaleStrike(req.strikePrice2!, currentUnderlying, entryPrice);
+        creditUsed = scaleCredit(req.netCredit, currentUnderlying, entryPrice);
+        result = simulateCCS(entryPrice, exitPrice, maxPrice, strikeUsed, strike2Used, creditUsed);
         break;
       }
       case "strangle": {
