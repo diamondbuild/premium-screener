@@ -1,1 +1,1 @@
-placeholder
+__INDEX_CONTENT__

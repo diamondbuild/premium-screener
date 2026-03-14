@@ -1,13 +1,1 @@
-import type { Express, Request, Response } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import db from "./db";
-import { FAVICON_32_B64, FAVICON_180_B64, FAVICON_192_B64, FAVICON_512_B64 } from "./asset-favicons";
-import { OG_IMAGE_B64 } from "./asset-og";
-import { runFullScan, getSP500Tickers } from "./scanner";
-import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey } from "./backtester";
-import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings } from "./earnings";
-import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
-import { requireAuth, requireSubscription, checkSubscription, getUserByEmail, updateUserSubscription } from "./auth";
-import type { StrategyTrade, OptionLeg, StrategyType, InsertWatchlistItem } from "@shared/schema";
-import { insertWatchlistSchema, backtestRequestSchema, insertJournalEntrySchema, closeJournalEntrySchema } from "@shared/schema";
+__ROUTES_CONTENT__
