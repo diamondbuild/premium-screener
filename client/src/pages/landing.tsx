@@ -85,7 +85,7 @@ function MockDashboardHero() {
             {[
               { label: "Avg ROC", value: "226%", color: "text-emerald-400" },
               { label: "Avg POP", value: "81%", color: "text-emerald-400" },
-              { label: "Avg \u0394 Z-Score", value: "1.3\u03c3", color: "text-emerald-400" },
+              { label: "Avg Δ Z-Score", value: "1.3σ", color: "text-emerald-400" },
               { label: "Trades Today", value: "47", color: "text-white" },
             ].map((kpi) => (
               <div key={kpi.label} className="rounded-lg bg-zinc-800/60 border border-zinc-700/40 p-2.5">
@@ -111,9 +111,9 @@ function MockDashboardHero() {
           </div>
           <div className="space-y-1.5">
             {[
-              { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8\u03c3", credit: "$2.45" },
-              { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5\u03c3", credit: "$4.10" },
-              { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2\u03c3", credit: "$1.80" },
+              { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8σ", credit: "$2.45" },
+              { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5σ", credit: "$4.10" },
+              { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2σ", credit: "$1.80" },
             ].map((t) => (
               <div key={t.ticker} className="flex items-center justify-between rounded-lg bg-zinc-800/40 border border-zinc-700/30 p-2.5">
                 <div className="flex items-center gap-3">
@@ -124,7 +124,7 @@ function MockDashboardHero() {
                   <div className="hidden sm:flex items-center gap-3 ml-2">
                     <span className="text-[10px] text-zinc-500">ROC <span className="text-emerald-400 font-medium">{t.roc}</span></span>
                     <span className="text-[10px] text-zinc-500">POP <span className="text-zinc-300 font-medium">{t.pop}</span></span>
-                    <span className="text-[10px] text-zinc-500">\u0394Z <span className="text-zinc-300 font-medium">{t.dz}</span></span>
+                    <span className="text-[10px] text-zinc-500">ΔZ <span className="text-zinc-300 font-medium">{t.dz}</span></span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -162,7 +162,7 @@ function MockDashboardFull() {
           {[
             { label: "Avg Annualized ROC", value: "226%", icon: TrendingUp, color: "text-emerald-400" },
             { label: "Avg Probability of Profit", value: "81%", icon: Target, color: "text-emerald-400" },
-            { label: "Avg Delta Z-Score", value: "1.3\u03c3", icon: Activity, color: "text-emerald-400" },
+            { label: "Avg Delta Z-Score", value: "1.3σ", icon: Activity, color: "text-emerald-400" },
             { label: "S&P 500 + NASDAQ 100 Tickers", value: "500+", icon: BarChart3, color: "text-white" },
           ].map((kpi) => (
             <div key={kpi.label} className="rounded-lg bg-zinc-800/60 border border-zinc-700/40 p-3">
@@ -194,11 +194,11 @@ function MockDashboardFull() {
         </div>
         <div className="space-y-1.5">
           {[
-            { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8\u03c3", credit: "$2.45", iv: 72 },
-            { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5\u03c3", credit: "$4.10", iv: 65 },
-            { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2\u03c3", credit: "$1.80", iv: 58 },
-            { ticker: "AMZN", score: 83, strategy: "PCS", stratColor: "bg-emerald-500", roc: "186%", pop: "82%", dz: "1.1\u03c3", credit: "$3.20", iv: 54 },
-            { ticker: "META", score: 81, strategy: "Strangle", stratColor: "bg-purple-500", roc: "274%", pop: "73%", dz: "1.4\u03c3", credit: "$5.60", iv: 61 },
+            { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8σ", credit: "$2.45", iv: 72 },
+            { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5σ", credit: "$4.10", iv: 65 },
+            { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2σ", credit: "$1.80", iv: 58 },
+            { ticker: "AMZN", score: 83, strategy: "PCS", stratColor: "bg-emerald-500", roc: "186%", pop: "82%", dz: "1.1σ", credit: "$3.20", iv: 54 },
+            { ticker: "META", score: 81, strategy: "Strangle", stratColor: "bg-purple-500", roc: "274%", pop: "73%", dz: "1.4σ", credit: "$5.60", iv: 61 },
           ].map((t) => (
             <div key={t.ticker} className="flex items-center justify-between rounded-lg bg-zinc-800/40 border border-zinc-700/30 px-3 py-2.5">
               <div className="flex items-center gap-3">
@@ -207,7 +207,7 @@ function MockDashboardFull() {
                 <div className="hidden md:flex items-center gap-4 ml-1">
                   <span className="text-[10px] text-zinc-500">ROC <span className="text-emerald-400 font-medium">{t.roc}</span></span>
                   <span className="text-[10px] text-zinc-500">POP <span className="text-zinc-300 font-medium">{t.pop}</span></span>
-                  <span className="text-[10px] text-zinc-500">\u0394Z <span className="text-zinc-300 font-medium">{t.dz}</span></span>
+                  <span className="text-[10px] text-zinc-500">ΔZ <span className="text-zinc-300 font-medium">{t.dz}</span></span>
                   <span className="text-[10px] text-zinc-500">IV Rank <span className="text-zinc-300 font-medium">{t.iv}</span></span>
                 </div>
               </div>
@@ -313,7 +313,7 @@ export default function LandingPage() {
               <Link href="/auth"><Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 px-8 w-full sm:w-auto" data-testid="button-hero-cta">Start Free Preview <ArrowRight className="w-4 h-4 ml-1" /></Button></Link>
               <Button size="lg" variant="outline" className="text-zinc-300 border-zinc-700 hover:bg-zinc-800 w-full sm:w-auto" onClick={() => scrollTo("how-it-works")} data-testid="button-hero-how">See How It Works</Button>
             </div>
-            <p className={`text-xs text-zinc-500 ${fadeIn}`} style={{ animationDelay: "500ms" }}>No credit card required \u00b7 Free preview available \u00b7 Cancel anytime</p>
+            <p className={`text-xs text-zinc-500 ${fadeIn}`} style={{ animationDelay: "500ms" }}>No credit card required · Free preview available · Cancel anytime</p>
           </div>
           <div className={`w-full max-w-4xl mx-auto ${fadeInUp}`} style={{ animationDelay: "400ms" }}><MockDashboardHero /></div>
         </div>
