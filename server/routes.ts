@@ -655,28 +655,22 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/alerts/mark-seen", requireSubscription, (req, res) => {
+  app.post("/api/alerts/:id/seen", requireSubscription, (req, res) => {
     try {
-      const { alertIds } = req.body;
-      if (!Array.isArray(alertIds)) {
-        return res.status(400).json({ error: "alertIds must be an array" });
-      }
-      storage.markAlertsSeen(alertIds);
+      const id = parseInt(req.params.id);
+      storage.markAlertSeen(id);
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to mark alerts seen" });
+      res.status(500).json({ error: "Failed to mark alert seen" });
     }
   });
 
-  app.delete("/api/alerts/:id", requireSubscription, (req, res) => {
+  app.post("/api/alerts/seen-all", requireSubscription, (_req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-      const removed = storage.deleteAlert(id);
-      if (!removed) return res.status(404).json({ error: "Alert not found" });
+      storage.markAllAlertsSeen();
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to delete alert" });
+      res.status(500).json({ error: "Failed to mark all alerts seen" });
     }
   });
 
@@ -684,12 +678,10 @@ export async function registerRoutes(
   app.get("/api/journal", requireSubscription, (req, res) => {
     try {
       const status = req.query.status as string | undefined;
-      const ticker = req.query.ticker as string | undefined;
-      const limit = parseInt(req.query.limit as string) || 100;
-      const entries = storage.getJournalEntries(status as any, ticker, limit);
+      const entries = storage.getJournalEntries(status as any);
       res.json({ entries });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch journal entries" });
+      res.status(500).json({ error: "Failed to fetch journal" });
     }
   });
 
@@ -706,31 +698,30 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/journal/:id", requireSubscription, (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-      const updated = storage.updateJournalEntry(id, req.body);
-      if (!updated) return res.status(404).json({ error: "Not found" });
-      res.json(updated);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to update journal entry" });
-    }
-  });
-
   app.post("/api/journal/:id/close", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const parsed = closeJournalEntrySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      const closed = storage.closeJournalEntry(id, parsed.data);
-      if (!closed) return res.status(404).json({ error: "Not found" });
-      res.json(closed);
+      const entry = storage.closeJournalEntry(id, parsed.data);
+      if (!entry) return res.status(404).json({ error: "Journal entry not found" });
+      res.json(entry);
     } catch (err) {
       res.status(500).json({ error: "Failed to close journal entry" });
+    }
+  });
+
+  app.patch("/api/journal/:id", requireSubscription, (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const entry = storage.updateJournalEntry(id, req.body);
+      if (!entry) return res.status(404).json({ error: "Journal entry not found" });
+      res.json(entry);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update journal entry" });
     }
   });
 
@@ -739,7 +730,7 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const removed = storage.deleteJournalEntry(id);
-      if (!removed) return res.status(404).json({ error: "Not found" });
+      if (!removed) return res.status(404).json({ error: "Journal entry not found" });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete journal entry" });
@@ -754,49 +745,47 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
 
-      const btReq = parsed.data;
-      const cacheKey = buildCacheKey(btReq);
+      const params = parsed.data;
+      const cacheKey = buildCacheKey(params);
 
       // Check cache first
       const cached = getCachedBacktest(cacheKey);
       if (cached) {
-        return res.json({ ...cached, fromCache: true });
+        return res.json({ result: cached, cached: true });
       }
 
-      // Run new backtest
-      const result = await runBacktest(btReq);
+      // Run the backtest
+      const result = await runBacktest(params);
       cacheBacktest(cacheKey, result);
-      res.json(result);
+
+      return res.json({ result, cached: false });
     } catch (err: any) {
       console.error("Backtest error:", err);
       res.status(500).json({ error: err.message || "Backtest failed" });
     }
   });
 
-  // GET /api/earnings — upcoming earnings for all tracked tickers
-  app.get("/api/earnings", checkSubscription, (req, res) => {
+  // ── Earnings routes ──
+  app.get("/api/earnings", (_req, res) => {
     try {
-      const days = parseInt(req.query.days as string) || 30;
-      const earnings = getAllUpcomingEarnings(days);
+      const earnings = getAllUpcomingEarnings();
       res.json({ earnings });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  // GET /api/earnings/:ticker — next earnings for specific ticker
-  app.get("/api/earnings/:ticker", checkSubscription, (req, res) => {
+  app.get("/api/earnings/:ticker", (_req, res) => {
     try {
-      const ticker = req.params.ticker.toUpperCase();
-      const next = getNextEarnings(ticker);
-      res.json({ ticker, next });
+      const { ticker } = _req.params;
+      const next = getNextEarnings(ticker.toUpperCase());
+      res.json({ ticker: ticker.toUpperCase(), next });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  // POST /api/earnings/refresh — manually refresh earnings data (premium)
-  app.post("/api/earnings/refresh", requireSubscription, (req, res) => {
+  app.post("/api/earnings/refresh", requireSubscription, (_req, res) => {
     try {
       refreshEarningsData();
       res.json({ message: "Earnings refresh triggered" });
@@ -806,22 +795,21 @@ export async function registerRoutes(
   });
 
   // ── IV Rank routes ──
-  app.get("/api/iv-rank/:ticker", checkSubscription, (req, res) => {
+  app.get("/api/iv-rank/:ticker", requireSubscription, (req, res) => {
     try {
-      const ticker = req.params.ticker.toUpperCase();
-      const ivData = getIVRank(ticker);
-      res.json(ivData || { ticker, ivRank: null, ivPercentile: null, message: "No IV data available" });
+      const { ticker } = req.params;
+      const ivRank = getIVRank(ticker.toUpperCase());
+      if (!ivRank) return res.status(404).json({ error: "No IV data for ticker" });
+      res.json(ivRank);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch IV rank" });
     }
   });
 
-  app.post("/api/iv-rank/batch", checkSubscription, (req, res) => {
+  app.post("/api/iv-rank/batch", requireSubscription, (req, res) => {
     try {
       const { tickers } = req.body;
-      if (!Array.isArray(tickers)) {
-        return res.status(400).json({ error: "tickers must be an array" });
-      }
+      if (!Array.isArray(tickers)) return res.status(400).json({ error: "tickers must be an array" });
       const results = getIVRankBatch(tickers.map((t: string) => t.toUpperCase()));
       res.json({ results });
     } catch (err) {
@@ -829,198 +817,167 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/auth/status — check subscription status
-  app.get("/api/auth/status", async (req, res) => {
-    try {
-      const authHeader = req.headers["authorization"];
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.json({ authenticated: false, isPremium: false });
-      }
-      const token = authHeader.slice(7);
-      const { data: { user }, error } = await (await import("./auth")).getSupabaseAdmin().auth.getUser(token);
-      if (error || !user) {
-        return res.json({ authenticated: false, isPremium: false });
-      }
-      const isPremium = await checkSubscription(user.id);
-      return res.json({
-        authenticated: true,
-        isPremium,
-        userId: user.id,
-        email: user.email,
-      });
-    } catch (err) {
-      res.status(500).json({ error: "Auth status check failed" });
-    }
-  });
-
-  // ── Stripe webhook ──
+  // ── Stripe webhook (raw body needed) ──
   app.post("/api/stripe/webhook", async (req, res) => {
+    const stripe = (await import("stripe")).default;
+    const stripeClient = new stripe(process.env.STRIPE_SECRET_KEY || "");
+    const sig = req.headers["stripe-signature"] as string;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+
+    let event;
     try {
-      const stripe = (await import("./stripe")).default;
-      const sig = req.headers["stripe-signature"] as string;
-      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-      if (!webhookSecret) {
-        console.error("STRIPE_WEBHOOK_SECRET not configured");
-        return res.status(500).json({ error: "Webhook not configured" });
-      }
-
-      let event;
-      try {
-        event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-      } catch (err: any) {
-        console.error("Webhook signature verification failed:", err.message);
-        return res.status(400).json({ error: "Invalid signature" });
-      }
-
-      switch (event.type) {
-        case "checkout.session.completed": {
-          const session = event.data.object as any;
-          const userId = session.metadata?.userId;
-          const subscriptionId = session.subscription as string;
-          if (userId && subscriptionId) {
-            db.prepare(
-              `INSERT OR REPLACE INTO subscriptions (user_id, stripe_subscription_id, status, updated_at)
-               VALUES (?, ?, 'active', datetime('now'))`
-            ).run(userId, subscriptionId);
-            console.log(`Subscription activated for user ${userId}`);
-          }
-          break;
-        }
-        case "customer.subscription.updated": {
-          const sub = event.data.object as any;
-          const userId = sub.metadata?.userId;
-          if (userId) {
-            db.prepare(
-              `UPDATE subscriptions SET status = ?, updated_at = datetime('now') WHERE user_id = ?`
-            ).run(sub.status, userId);
-          }
-          break;
-        }
-        case "customer.subscription.deleted": {
-          const sub = event.data.object as any;
-          const userId = sub.metadata?.userId;
-          if (userId) {
-            db.prepare(
-              `UPDATE subscriptions SET status = 'canceled', updated_at = datetime('now') WHERE user_id = ?`
-            ).run(userId);
-            console.log(`Subscription canceled for user ${userId}`);
-          }
-          break;
-        }
-      }
-
-      res.json({ received: true });
-    } catch (err) {
-      console.error("Webhook error:", err);
-      res.status(500).json({ error: "Webhook processing failed" });
-    }
-  });
-
-  // POST /api/stripe/create-checkout
-  app.post("/api/stripe/create-checkout", requireAuth, async (req, res) => {
-    try {
-      const stripe = (await import("./stripe")).default;
-      const userId = (req as any).userId;
-      const { priceId, returnUrl } = req.body;
-
-      if (!priceId) {
-        return res.status(400).json({ error: "priceId is required" });
-      }
-
-      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "subscription",
-        line_items: [{ price: priceId, quantity: 1 }],
-        metadata: { userId },
-        success_url: `${baseUrl}/dashboard?checkout=success`,
-        cancel_url: `${baseUrl}/pricing?checkout=canceled`,
-      });
-
-      res.json({ url: session.url, sessionId: session.id });
+      event = stripeClient.webhooks.constructEvent(req.body, sig, webhookSecret);
     } catch (err: any) {
-      console.error("Checkout session creation failed:", err);
-      res.status(500).json({ error: err.message || "Failed to create checkout session" });
+      console.error("Stripe webhook error:", err.message);
+      return res.status(400).send(`Webhook error: ${err.message}`);
     }
-  });
 
-  // POST /api/stripe/create-portal
-  app.post("/api/stripe/create-portal", requireAuth, async (req, res) => {
-    try {
-      const stripe = (await import("./stripe")).default;
-      const userId = (req as any).userId;
-      const { returnUrl } = req.body;
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as any;
+      const customerEmail = session.customer_email || session.customer_details?.email;
+      const customerId = session.customer as string;
+      const subscriptionId = session.subscription as string;
 
-      // Get customer ID from subscription
-      const sub = db.prepare(
-        `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active'`
-      ).get(userId) as { stripe_subscription_id: string } | undefined;
-
-      if (!sub) {
-        return res.status(404).json({ error: "No active subscription found" });
+      if (customerEmail) {
+        await storage.upsertUser({
+          email: customerEmail,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscriptionId,
+          subscriptionStatus: "active",
+          subscriptionTier: "premium",
+        });
+        console.log(`New premium subscriber: ${customerEmail}`);
       }
-
-      // Get customer ID from Stripe
-      const subscription = await stripe.subscriptions.retrieve(sub.stripe_subscription_id);
+    } else if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.paused") {
+      const subscription = event.data.object as any;
       const customerId = subscription.customer as string;
-
-      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
-      const portalSession = await stripe.billingPortal.sessions.create({
-        customer: customerId,
-        return_url: `${baseUrl}/dashboard`,
-      });
-
-      res.json({ url: portalSession.url });
-    } catch (err: any) {
-      console.error("Portal session creation failed:", err);
-      res.status(500).json({ error: err.message || "Failed to create portal session" });
+      const user = await storage.getUserByStripeCustomerId(customerId);
+      if (user) {
+        await storage.upsertUser({ ...user, subscriptionStatus: "canceled" });
+        console.log(`Subscription canceled for: ${user.email}`);
+      }
+    } else if (event.type === "customer.subscription.updated") {
+      const subscription = event.data.object as any;
+      const customerId = subscription.customer as string;
+      const user = await storage.getUserByStripeCustomerId(customerId);
+      if (user) {
+        const status = subscription.status === "active" ? "active" : "canceled";
+        await storage.upsertUser({ ...user, subscriptionStatus: status });
+      }
     }
+
+    res.json({ received: true });
   });
 
-  // ── AI insights endpoint ──
+  // ── Auth routes ──
+  app.post("/api/auth/login", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+    const { validatePassword, createSession } = await import("./auth");
+    const user = await storage.getUserByEmail(email);
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const valid = await validatePassword(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const token = createSession(user.id, user.email);
+    res.json({ token, user: { id: user.id, email: user.email, subscriptionStatus: user.subscriptionStatus, subscriptionTier: user.subscriptionTier } });
+  });
+
+  app.post("/api/auth/register", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+    const { hashPassword, createSession } = await import("./auth");
+    const existingUser = await storage.getUserByEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ error: "Email already registered" });
+    }
+    const passwordHash = await hashPassword(password);
+    const user = await storage.createUser({ email, passwordHash });
+    const token = createSession(user.id, user.email);
+    res.status(201).json({ token, user: { id: user.id, email: user.email, subscriptionStatus: user.subscriptionStatus, subscriptionTier: user.subscriptionTier } });
+  });
+
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ user: { id: user.id, email: user.email, subscriptionStatus: user.subscriptionStatus, subscriptionTier: user.subscriptionTier } });
+  });
+
+  // ── Stripe checkout ──
+  app.post("/api/stripe/create-checkout", requireAuth, async (req, res) => {
+    const stripe = (await import("stripe")).default;
+    const stripeClient = new stripe(process.env.STRIPE_SECRET_KEY || "");
+    const userId = (req as any).userId;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const priceId = process.env.STRIPE_PRICE_ID;
+    if (!priceId) return res.status(500).json({ error: "Stripe price not configured" });
+
+    const session = await stripeClient.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "subscription",
+      customer_email: user.email,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${req.headers.origin || "http://localhost:5000"}/upgrade?success=1`,
+      cancel_url: `${req.headers.origin || "http://localhost:5000"}/upgrade?canceled=1`,
+      metadata: { userId: String(user.id) },
+    });
+
+    res.json({ url: session.url });
+  });
+
+  // ── Customer portal ──
+  app.post("/api/stripe/portal", requireAuth, async (req, res) => {
+    const stripe = (await import("stripe")).default;
+    const stripeClient = new stripe(process.env.STRIPE_SECRET_KEY || "");
+    const userId = (req as any).userId;
+    const user = await storage.getUserById(userId);
+    if (!user?.stripeCustomerId) return res.status(400).json({ error: "No Stripe customer" });
+
+    const session = await stripeClient.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: `${req.headers.origin || "http://localhost:5000"}/account`,
+    });
+
+    res.json({ url: session.url });
+  });
+
+  // ── AI Insights route (premium only) ──
   app.post("/api/ai-insights", requireSubscription, async (req, res) => {
     try {
-      const { trade, question } = req.body;
-      if (!trade) {
-        return res.status(400).json({ error: "trade is required" });
+      const { trades, question } = req.body;
+      if (!trades || !Array.isArray(trades)) {
+        return res.status(400).json({ error: "trades array required" });
       }
 
       const OpenAI = (await import("openai")).default;
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-      const tradeContext = `
-Strategy: ${trade.strategyType}
-Ticker: ${trade.underlyingTicker}
-Underlying Price: $${trade.underlyingPrice}
-Expiration: ${trade.expirationDate} (${trade.daysToExpiration} DTE)
-Net Credit: $${trade.netCredit}
-Max Profit: $${trade.maxProfit}
-Max Loss: $${trade.maxLoss}
-Probability of Profit: ${(trade.probabilityOfProfit * 100).toFixed(1)}%
-Annualized ROC: ${trade.annualizedROC}%
-Composite Score: ${trade.compositeScore}/100
-Delta: ${trade.netDelta}
-Theta: ${trade.netTheta}
-Break-even: ${trade.breakEvenLow}${trade.breakEvenHigh ? ` - $${trade.breakEvenHigh}` : ""}
-`;
+      const tradesSummary = trades.slice(0, 10).map((t: any) => ({
+        ticker: t.underlyingTicker,
+        strategy: t.strategyType,
+        score: t.compositeScore,
+        pop: (t.probabilityOfProfit * 100).toFixed(1) + "%",
+        roc: t.annualizedROC + "%",
+        dte: t.daysToExpiration,
+        credit: "$" + (t.netCredit * 100).toFixed(0),
+      }));
 
       const prompt = question
-        ? `You are an expert options trading analyst. Analyze this trade and answer the user's question.
-
-Trade details:
-${tradeContext}
-
-User question: ${question}
-
-Provide a concise, actionable answer (2-3 sentences).`
-        : `You are an expert options trading analyst. Provide a brief analysis of this options trade.
-
-Trade details:
-${tradeContext}
-
-Provide 2-3 key insights about: (1) risk/reward profile, (2) market conditions this works best in, (3) one key risk to monitor. Keep it concise and actionable.`;
+        ? `You are an expert options trader. The user has these top trades:\n${JSON.stringify(tradesSummary, null, 2)}\n\nUser question: ${question}\n\nProvide a concise, actionable answer (2-4 sentences).`
+        : `You are an expert options trader. Analyze these top trades and provide 3 key insights about market conditions and opportunities:\n${JSON.stringify(tradesSummary, null, 2)}\n\nProvide exactly 3 bullet-point insights, each 1-2 sentences. Focus on patterns, risk/reward, and actionable observations.`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -1029,7 +986,7 @@ Provide 2-3 key insights about: (1) risk/reward profile, (2) market conditions t
         temperature: 0.7,
       });
 
-      const insights = completion.choices[0]?.message?.content || "Unable to generate insights";
+      const insights = completion.choices[0]?.message?.content || "Unable to generate insights.";
       res.json({ insights });
     } catch (err: any) {
       console.error("AI insights error:", err);
