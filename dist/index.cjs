@@ -1,1 +1,1 @@
-PLACEHOLDER_WILL_BE_REPLACED
+LOAD_FROM_FILE:/home/user/workspace/dist_index_cjs_built.js
