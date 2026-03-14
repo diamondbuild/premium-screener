@@ -86,6 +86,31 @@ interface OHLCVBar {
   t: number;  // timestamp (ms)
 }
 
+// Simple rate limiter: track last call time and enforce min gap
+let lastPolygonCall = 0;
+const POLYGON_MIN_GAP_MS = 12500; // 5 calls/min = 12s gap to stay safe
+
+async function rateLimitedPolygonCall(pathname: string, params: Record<string, string> = {}): Promise<any> {
+  const now = Date.now();
+  const elapsed = now - lastPolygonCall;
+  if (elapsed < POLYGON_MIN_GAP_MS) {
+    await new Promise(resolve => setTimeout(resolve, POLYGON_MIN_GAP_MS - elapsed));
+  }
+  lastPolygonCall = Date.now();
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const data = await callPolygonDirect(pathname, params);
+    if (data?.status === "ERROR" && data?.error?.includes("exceeded")) {
+      console.log(`Polygon rate limit hit, waiting 15s (attempt ${attempt + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      lastPolygonCall = Date.now();
+      continue;
+    }
+    return data;
+  }
+  return null;
+}
+
 async function fetchHistoricalOHLCV(ticker: string, months: number): Promise<OHLCVBar[]> {
   const endDate = new Date();
   const startDate = new Date();
@@ -94,7 +119,7 @@ async function fetchHistoricalOHLCV(ticker: string, months: number): Promise<OHL
   const from = startDate.toISOString().split("T")[0];
   const to = endDate.toISOString().split("T")[0];
 
-  const data = await callPolygonDirect(`/v2/aggs/ticker/${ticker}/range/1/day/${from}/${to}`, {
+  const data = await rateLimitedPolygonCall(`/v2/aggs/ticker/${ticker}/range/1/day/${from}/${to}`, {
     adjusted: "true",
     sort: "asc",
     limit: "5000",
