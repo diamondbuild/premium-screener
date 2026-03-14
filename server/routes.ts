@@ -657,7 +657,10 @@ export async function registerRoutes(
 
   app.post("/api/alerts/mark-seen", requireSubscription, (req, res) => {
     try {
-      const { alertIds } = req.body || {};
+      const { alertIds } = req.body;
+      if (!Array.isArray(alertIds)) {
+        return res.status(400).json({ error: "alertIds must be an array" });
+      }
       storage.markAlertsSeen(alertIds);
       res.json({ success: true });
     } catch (err) {
@@ -669,83 +672,82 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-      storage.deleteAlert(id);
+      const removed = storage.deleteAlert(id);
+      if (!removed) return res.status(404).json({ error: "Alert not found" });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete alert" });
     }
   });
 
-  // ── Earnings routes ──
-  app.get("/api/earnings", (_req, res) => {
+  // ── Journal routes (premium only) ──
+  app.get("/api/journal", requireSubscription, (req, res) => {
     try {
-      const upcoming = getAllUpcomingEarnings();
-      res.json({ earnings: upcoming, total: upcoming.length });
+      const status = req.query.status as string | undefined;
+      const ticker = req.query.ticker as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 100;
+      const entries = storage.getJournalEntries(status as any, ticker, limit);
+      res.json({ entries });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch earnings" });
+      res.status(500).json({ error: "Failed to fetch journal entries" });
     }
   });
 
-  app.get("/api/earnings/:ticker", (req, res) => {
+  app.post("/api/journal", requireSubscription, (req, res) => {
     try {
-      const ticker = req.params.ticker.toUpperCase();
-      const next = getNextEarnings(ticker);
-      res.json({ ticker, nextEarnings: next });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch earnings for ticker" });
-    }
-  });
-
-  app.post("/api/earnings/refresh", (_req, res) => {
-    try {
-      const count = refreshEarningsData();
-      res.json({ success: true, entriesCached: count });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to refresh earnings" });
-    }
-  });
-
-  // ── IV Rank routes ──
-  app.get("/api/iv-rank/:ticker", (req, res) => {
-    try {
-      const ticker = req.params.ticker.toUpperCase();
-      const data = getIVRank(ticker);
-      if (!data) {
-        return res.json({ ticker, ivRank: null, message: "No IV history available. Data accumulates with each scan." });
+      const parsed = insertJournalEntrySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      res.json(data);
+      const entry = storage.addJournalEntry(parsed.data);
+      res.status(201).json(entry);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch IV rank" });
+      res.status(500).json({ error: "Failed to add journal entry" });
     }
   });
 
-  app.get("/api/iv-rank", (_req, res) => {
+  app.patch("/api/journal/:id", requireSubscription, (req, res) => {
     try {
-      const tickers = getSP500Tickers();
-      const data = getIVRankBatch(tickers);
-      const result: any[] = [];
-      for (const [ticker, ivData] of data) {
-        result.push(ivData);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = storage.updateJournalEntry(id, req.body);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update journal entry" });
+    }
+  });
+
+  app.post("/api/journal/:id/close", requireSubscription, (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const parsed = closeJournalEntrySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      result.sort((a, b) => (b.ivRank ?? 0) - (a.ivRank ?? 0));
-      res.json({ tickers: result, total: result.length, coverage: `${result.length}/${tickers.length}` });
+      const closed = storage.closeJournalEntry(id, parsed.data);
+      if (!closed) return res.status(404).json({ error: "Not found" });
+      res.json(closed);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch IV rank data" });
+      res.status(500).json({ error: "Failed to close journal entry" });
     }
   });
 
-  app.post("/api/iv-rank/backfill", (_req, res) => {
+  app.delete("/api/journal/:id", requireSubscription, (req, res) => {
     try {
-      const tickers = getSP500Tickers().slice(0, 10); // Limit manual backfill to 10 at a time
-      const result = backfillTickers(tickers);
-      res.json({ ...result, message: "Backfill started for first 10 tickers" });
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const removed = storage.deleteJournalEntry(id);
+      if (!removed) return res.status(404).json({ error: "Not found" });
+      res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to start backfill" });
+      res.status(500).json({ error: "Failed to delete journal entry" });
     }
   });
 
-  // ── Backtest routes (premium only) ──
-  app.post("/api/backtest", requireSubscription, (req, res) => {
+  // ── Backtest route ──
+  app.post("/api/backtest", requireSubscription, async (req, res) => {
     try {
       const parsed = backtestRequestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -758,192 +760,280 @@ export async function registerRoutes(
       // Check cache first
       const cached = getCachedBacktest(cacheKey);
       if (cached) {
-        return res.json({ result: cached, cached: true });
+        return res.json({ ...cached, fromCache: true });
       }
 
-      // Run backtest (synchronous — typically takes < 2s for OHLCV fetch + simulation)
-      const result = runBacktest(btReq);
+      // Run new backtest
+      const result = await runBacktest(btReq);
       cacheBacktest(cacheKey, result);
-      res.json({ result, cached: false });
+      res.json(result);
     } catch (err: any) {
-      console.error("Backtest error:", err?.message);
-      res.status(500).json({ error: err?.message || "Backtest failed" });
+      console.error("Backtest error:", err);
+      res.status(500).json({ error: err.message || "Backtest failed" });
     }
   });
 
-  // ── Trade Journal (premium only) ──
-
-  // GET /api/journal - List entries
-  app.get("/api/journal", requireSubscription, (req, res) => {
+  // GET /api/earnings — upcoming earnings for all tracked tickers
+  app.get("/api/earnings", checkSubscription, (req, res) => {
     try {
-      const status = (req.query.status as string) || undefined;
-      const entries = storage.getJournalEntries(status);
-      res.json({ entries, total: entries.length });
+      const days = parseInt(req.query.days as string) || 30;
+      const earnings = getAllUpcomingEarnings(days);
+      res.json({ earnings });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch journal entries" });
+      res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  // GET /api/journal/stats - Performance stats
-  app.get("/api/journal/stats", requireSubscription, (_req, res) => {
+  // GET /api/earnings/:ticker — next earnings for specific ticker
+  app.get("/api/earnings/:ticker", checkSubscription, (req, res) => {
     try {
-      const stats = storage.getJournalStats();
-      res.json(stats);
+      const ticker = req.params.ticker.toUpperCase();
+      const next = getNextEarnings(ticker);
+      res.json({ ticker, next });
     } catch (err) {
-      res.status(500).json({ error: "Failed to compute journal stats" });
+      res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  // GET /api/journal/greeks - Portfolio-level greeks for open positions
-  app.get("/api/journal/greeks", requireSubscription, (_req, res) => {
+  // POST /api/earnings/refresh — manually refresh earnings data (premium)
+  app.post("/api/earnings/refresh", requireSubscription, (req, res) => {
     try {
-      const greeks = storage.getPortfolioGreeks();
-      res.json(greeks);
+      refreshEarningsData();
+      res.json({ message: "Earnings refresh triggered" });
     } catch (err) {
-      res.status(500).json({ error: "Failed to compute portfolio greeks" });
+      res.status(500).json({ error: "Failed to refresh earnings" });
     }
   });
 
-  // GET /api/journal/logged-ids - Get scan trade IDs that are already logged
-  app.get("/api/journal/logged-ids", requireSubscription, (_req, res) => {
+  // ── IV Rank routes ──
+  app.get("/api/iv-rank/:ticker", checkSubscription, (req, res) => {
     try {
-      const ids = storage.getLoggedTradeIds();
-      res.json({ ids });
+      const ticker = req.params.ticker.toUpperCase();
+      const ivData = getIVRank(ticker);
+      res.json(ivData || { ticker, ivRank: null, ivPercentile: null, message: "No IV data available" });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch logged IDs" });
+      res.status(500).json({ error: "Failed to fetch IV rank" });
     }
   });
 
-  // GET /api/journal/:id - Single entry
-  app.get("/api/journal/:id", requireSubscription, (req, res) => {
+  app.post("/api/iv-rank/batch", checkSubscription, (req, res) => {
     try {
-      const entry = storage.getJournalEntry(parseInt(req.params.id));
-      if (!entry) return res.status(404).json({ error: "Entry not found" });
-      res.json(entry);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch entry" });
-    }
-  });
-
-  // POST /api/journal - Add entry
-  app.post("/api/journal", requireSubscription, (req, res) => {
-    try {
-      const parsed = insertJournalEntrySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid journal entry", details: parsed.error.issues });
+      const { tickers } = req.body;
+      if (!Array.isArray(tickers)) {
+        return res.status(400).json({ error: "tickers must be an array" });
       }
-      const entry = storage.addJournalEntry(parsed.data);
-      res.status(201).json(entry);
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to add journal entry" });
+      const results = getIVRankBatch(tickers.map((t: string) => t.toUpperCase()));
+      res.json({ results });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch IV rank batch" });
     }
   });
 
-  // PUT /api/journal/:id/close - Close/settle a position
-  app.put("/api/journal/:id/close", requireSubscription, (req, res) => {
+  // GET /api/auth/status — check subscription status
+  app.get("/api/auth/status", async (req, res) => {
     try {
-      const parsed = closeJournalEntrySchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid close data", details: parsed.error.issues });
+      const authHeader = req.headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.json({ authenticated: false, isPremium: false });
       }
-      const entry = storage.closeJournalEntry(parseInt(req.params.id), parsed.data);
-      if (!entry) return res.status(404).json({ error: "Entry not found" });
-      res.json(entry);
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || "Failed to close entry" });
-    }
-  });
-
-  // PUT /api/journal/:id/entry - Update fill price and contracts
-  app.put("/api/journal/:id/entry", requireSubscription, (req, res) => {
-    try {
-      const { entryCredit, contracts } = req.body;
-      const updates: { entryCredit?: number; contracts?: number } = {};
-      if (typeof entryCredit === "number" && entryCredit >= 0) updates.entryCredit = entryCredit;
-      if (typeof contracts === "number" && contracts >= 1) updates.contracts = contracts;
-      if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No valid fields to update" });
-      const entry = storage.updateJournalEntry(parseInt(req.params.id), updates);
-      if (!entry) return res.status(404).json({ error: "Entry not found" });
-      res.json(entry);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to update entry" });
-    }
-  });
-
-  // PUT /api/journal/:id/notes - Update notes/tags
-  app.put("/api/journal/:id/notes", requireSubscription, (req, res) => {
-    try {
-      const { notes, tags } = req.body;
-      const entry = storage.updateJournalNotes(parseInt(req.params.id), notes, tags);
-      if (!entry) return res.status(404).json({ error: "Entry not found" });
-      res.json(entry);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to update notes" });
-    }
-  });
-
-  // DELETE /api/journal/:id
-  app.delete("/api/journal/:id", requireSubscription, (req, res) => {
-    try {
-      const deleted = storage.deleteJournalEntry(parseInt(req.params.id));
-      if (!deleted) return res.status(404).json({ error: "Entry not found" });
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to delete entry" });
-    }
-  });
-
-  // GET /api/insights - Historical win rate stats from backtest cache
-  app.get("/api/insights", (_req, res) => {
-    try {
-      const rows = db.prepare(`SELECT cache_key, result_json FROM backtest_cache`).all() as { cache_key: string; result_json: string }[];
-      const byStrategy: Record<string, { totalTrades: number; wins: number; losses: number; totalPnL: number; avgWinRate: number; tickers: Set<string> }> = {};
-      const byIVR: { high: { trades: number; wins: number; pnl: number }; low: { trades: number; wins: number; pnl: number } } = {
-        high: { trades: 0, wins: 0, pnl: 0 },
-        low: { trades: 0, wins: 0, pnl: 0 },
-      };
-
-      for (const row of rows) {
-        try {
-          const result = JSON.parse(row.result_json);
-          const st = result.strategyType || row.cache_key.split(':')[0] || 'unknown';
-          const ticker = result.ticker || row.cache_key.split(':')[1] || '';
-          if (!byStrategy[st]) byStrategy[st] = { totalTrades: 0, wins: 0, losses: 0, totalPnL: 0, avgWinRate: 0, tickers: new Set() };
-          byStrategy[st].totalTrades += result.totalTrades || 0;
-          byStrategy[st].wins += result.wins || 0;
-          byStrategy[st].losses += result.losses || 0;
-          byStrategy[st].totalPnL += result.totalPnL || 0;
-          if (ticker) byStrategy[st].tickers.add(ticker);
-        } catch {}
+      const token = authHeader.slice(7);
+      const { data: { user }, error } = await (await import("./auth")).getSupabaseAdmin().auth.getUser(token);
+      if (error || !user) {
+        return res.json({ authenticated: false, isPremium: false });
       }
-
-      // Compute averages
-      const insights = Object.entries(byStrategy).map(([strategy, data]) => ({
-        strategy,
-        totalTrades: data.totalTrades,
-        wins: data.wins,
-        losses: data.losses,
-        winRate: data.totalTrades > 0 ? +((data.wins / data.totalTrades) * 100).toFixed(1) : 0,
-        totalPnL: +data.totalPnL.toFixed(2),
-        avgPnLPerTrade: data.totalTrades > 0 ? +(data.totalPnL / data.totalTrades).toFixed(2) : 0,
-        tickersBacktested: data.tickers.size,
-      }));
-
-      // Also get journal-based win rates
-      const journalStats = storage.getJournalStats();
-
-      res.json({
-        backtest: insights.sort((a, b) => b.totalTrades - a.totalTrades),
-        journal: {
-          winRate: journalStats.winRate,
-          totalTrades: journalStats.closedTrades,
-          profitFactor: journalStats.profitFactor,
-          byStrategy: journalStats.byStrategy,
-        },
-        totalBacktestEntries: rows.length,
+      const isPremium = await checkSubscription(user.id);
+      return res.json({
+        authenticated: true,
+        isPremium,
+        userId: user.id,
+        email: user.email,
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to compute insights" });
+      res.status(500).json({ error: "Auth status check failed" });
+    }
+  });
+
+  // ── Stripe webhook ──
+  app.post("/api/stripe/webhook", async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const sig = req.headers["stripe-signature"] as string;
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!webhookSecret) {
+        console.error("STRIPE_WEBHOOK_SECRET not configured");
+        return res.status(500).json({ error: "Webhook not configured" });
+      }
+
+      let event;
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      } catch (err: any) {
+        console.error("Webhook signature verification failed:", err.message);
+        return res.status(400).json({ error: "Invalid signature" });
+      }
+
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as any;
+          const userId = session.metadata?.userId;
+          const subscriptionId = session.subscription as string;
+          if (userId && subscriptionId) {
+            db.prepare(
+              `INSERT OR REPLACE INTO subscriptions (user_id, stripe_subscription_id, status, updated_at)
+               VALUES (?, ?, 'active', datetime('now'))`
+            ).run(userId, subscriptionId);
+            console.log(`Subscription activated for user ${userId}`);
+          }
+          break;
+        }
+        case "customer.subscription.updated": {
+          const sub = event.data.object as any;
+          const userId = sub.metadata?.userId;
+          if (userId) {
+            db.prepare(
+              `UPDATE subscriptions SET status = ?, updated_at = datetime('now') WHERE user_id = ?`
+            ).run(sub.status, userId);
+          }
+          break;
+        }
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as any;
+          const userId = sub.metadata?.userId;
+          if (userId) {
+            db.prepare(
+              `UPDATE subscriptions SET status = 'canceled', updated_at = datetime('now') WHERE user_id = ?`
+            ).run(userId);
+            console.log(`Subscription canceled for user ${userId}`);
+          }
+          break;
+        }
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error("Webhook error:", err);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // POST /api/stripe/create-checkout
+  app.post("/api/stripe/create-checkout", requireAuth, async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const userId = (req as any).userId;
+      const { priceId, returnUrl } = req.body;
+
+      if (!priceId) {
+        return res.status(400).json({ error: "priceId is required" });
+      }
+
+      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { userId },
+        success_url: `${baseUrl}/dashboard?checkout=success`,
+        cancel_url: `${baseUrl}/pricing?checkout=canceled`,
+      });
+
+      res.json({ url: session.url, sessionId: session.id });
+    } catch (err: any) {
+      console.error("Checkout session creation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to create checkout session" });
+    }
+  });
+
+  // POST /api/stripe/create-portal
+  app.post("/api/stripe/create-portal", requireAuth, async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const userId = (req as any).userId;
+      const { returnUrl } = req.body;
+
+      // Get customer ID from subscription
+      const sub = db.prepare(
+        `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active'`
+      ).get(userId) as { stripe_subscription_id: string } | undefined;
+
+      if (!sub) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
+
+      // Get customer ID from Stripe
+      const subscription = await stripe.subscriptions.retrieve(sub.stripe_subscription_id);
+      const customerId = subscription.customer as string;
+
+      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `${baseUrl}/dashboard`,
+      });
+
+      res.json({ url: portalSession.url });
+    } catch (err: any) {
+      console.error("Portal session creation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to create portal session" });
+    }
+  });
+
+  // ── AI insights endpoint ──
+  app.post("/api/ai-insights", requireSubscription, async (req, res) => {
+    try {
+      const { trade, question } = req.body;
+      if (!trade) {
+        return res.status(400).json({ error: "trade is required" });
+      }
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const tradeContext = `
+Strategy: ${trade.strategyType}
+Ticker: ${trade.underlyingTicker}
+Underlying Price: $${trade.underlyingPrice}
+Expiration: ${trade.expirationDate} (${trade.daysToExpiration} DTE)
+Net Credit: $${trade.netCredit}
+Max Profit: $${trade.maxProfit}
+Max Loss: $${trade.maxLoss}
+Probability of Profit: ${(trade.probabilityOfProfit * 100).toFixed(1)}%
+Annualized ROC: ${trade.annualizedROC}%
+Composite Score: ${trade.compositeScore}/100
+Delta: ${trade.netDelta}
+Theta: ${trade.netTheta}
+Break-even: ${trade.breakEvenLow}${trade.breakEvenHigh ? ` - $${trade.breakEvenHigh}` : ""}
+`;
+
+      const prompt = question
+        ? `You are an expert options trading analyst. Analyze this trade and answer the user's question.
+
+Trade details:
+${tradeContext}
+
+User question: ${question}
+
+Provide a concise, actionable answer (2-3 sentences).`
+        : `You are an expert options trading analyst. Provide a brief analysis of this options trade.
+
+Trade details:
+${tradeContext}
+
+Provide 2-3 key insights about: (1) risk/reward profile, (2) market conditions this works best in, (3) one key risk to monitor. Keep it concise and actionable.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0.7,
+      });
+
+      const insights = completion.choices[0]?.message?.content || "Unable to generate insights";
+      res.json({ insights });
+    } catch (err: any) {
+      console.error("AI insights error:", err);
+      res.status(500).json({ error: "Failed to generate AI insights" });
     }
   });
 

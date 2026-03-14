@@ -1,4 +1,4 @@
-import { execFileSync } from "child_process";
+import https from "https";
 import db from "./db";
 
 // ── Types ──
@@ -54,30 +54,27 @@ export interface BacktestResult {
   computedAt: string;
 }
 
-// ── Fetch OHLCV via finance tools ──
-function callMassive(pathname: string, params: Record<string, string> = {}): any {
-  const payload = JSON.stringify({
-    source_id: "finance",
-    tool_name: "finance_massive",
-    arguments: { pathname, params },
-  });
-  try {
-    const raw = execFileSync("external-tool", ["call", payload], {
-      timeout: 30000,
-      encoding: "utf-8",
+// ── Polygon API key ──
+const POLYGON_API_KEY = process.env.POLYGON_API_KEY || "ySa69UMk92kM1oE7j227SiIK6WfoMh21";
+
+// ── Fetch from Polygon API directly via HTTPS ──
+function callPolygonDirect(pathname: string, params: Record<string, string> = {}): Promise<any> {
+  const qs = new URLSearchParams({ ...params, apiKey: POLYGON_API_KEY }).toString();
+  const url = `https://api.polygon.io${pathname}?${qs}`;
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 25000 }, (res) => {
+      let body = "";
+      res.on("data", (chunk: string) => { body += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); } catch { resolve(null); }
+      });
     });
-    const parsed = JSON.parse(raw);
-    if (parsed?.result?.content) {
-      return JSON.parse(parsed.result.content);
-    }
-    if (parsed?.content && typeof parsed.content === "string") {
-      return JSON.parse(parsed.content);
-    }
-    return parsed;
-  } catch (err: any) {
-    console.error(`Backtest API error: ${err?.message?.slice(0, 120)}`);
-    return null;
-  }
+    req.on("error", (err: Error) => {
+      console.error(`Polygon API [${pathname.split("/").pop()}]: ${err.message}`);
+      resolve(null);
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
 }
 
 interface OHLCVBar {
@@ -89,7 +86,7 @@ interface OHLCVBar {
   t: number;  // timestamp (ms)
 }
 
-function fetchHistoricalOHLCV(ticker: string, months: number): OHLCVBar[] {
+async function fetchHistoricalOHLCV(ticker: string, months: number): Promise<OHLCVBar[]> {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setMonth(startDate.getMonth() - months);
@@ -97,7 +94,7 @@ function fetchHistoricalOHLCV(ticker: string, months: number): OHLCVBar[] {
   const from = startDate.toISOString().split("T")[0];
   const to = endDate.toISOString().split("T")[0];
 
-  const data = callMassive(`/v2/aggs/ticker/${ticker}/range/1/day/${from}/${to}`, {
+  const data = await callPolygonDirect(`/v2/aggs/ticker/${ticker}/range/1/day/${from}/${to}`, {
     adjusted: "true",
     sort: "asc",
     limit: "5000",
@@ -231,9 +228,9 @@ function simulateIronCondor(
 }
 
 // ── Main backtest runner ──
-export function runBacktest(req: BacktestRequest): BacktestResult {
+export async function runBacktest(req: BacktestRequest): Promise<BacktestResult> {
   const months = req.lookbackMonths || 6;
-  const bars = fetchHistoricalOHLCV(req.ticker, months);
+  const bars = await fetchHistoricalOHLCV(req.ticker, months);
 
   if (bars.length < 20) {
     throw new Error(`Insufficient historical data for ${req.ticker}: only ${bars.length} bars`);
