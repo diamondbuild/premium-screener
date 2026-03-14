@@ -175,6 +175,24 @@ export async function refreshEarningsData(force = false): Promise<number> {
   return entries.length;
 }
 
+// ── Bulk import earnings data (from external source) ──
+export function importEarningsData(entries: EarningsDate[]): number {
+  if (entries.length === 0) return 0;
+  const now = new Date();
+  const insertMany = db.transaction((items: EarningsDate[]) => {
+    const fetchedAt = now.toISOString();
+    for (const e of items) {
+      upsertEarnings.run(e.ticker, e.earningsDate, e.earningsTime, e.fiscalPeriod, e.status, fetchedAt);
+    }
+  });
+  insertMany(entries);
+  // Update meta so cache TTL starts fresh
+  const dates = entries.map(e => e.earningsDate).sort();
+  upsertMeta.run(now.toISOString(), dates[0], dates[dates.length - 1]);
+  console.log(`Imported ${entries.length} earnings entries`);
+  return entries.length;
+}
+
 // ── Lookup: get next earnings date for a ticker ──
 export function getNextEarnings(ticker: string): EarningsDate | null {
   const today = new Date().toISOString().split("T")[0];

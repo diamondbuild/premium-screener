@@ -6,7 +6,7 @@ import { FAVICON_32_B64, FAVICON_180_B64, FAVICON_192_B64, FAVICON_512_B64 } fro
 import { OG_IMAGE_B64 } from "./asset-og";
 import { runFullScan, getSP500Tickers } from "./scanner";
 import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey } from "./backtester";
-import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings } from "./earnings";
+import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings, importEarningsData } from "./earnings";
 import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
 import { requireAuth, requireSubscription, checkSubscription, getUserByEmail, updateUserSubscription } from "./auth";
 import type { StrategyTrade, OptionLeg, StrategyType, InsertWatchlistItem } from "@shared/schema";
@@ -947,6 +947,15 @@ export async function registerRoutes(
     if (!user) return res.status(404).json({ error: "User not found" });
     updateUserSubscription(user.id, "active", "owner-override", "owner", null);
     res.json({ ok: true, email, status: "active" });
+  });
+
+  // ── Admin: import earnings data (for when Nasdaq API is blocked from Railway) ──
+  app.post("/api/admin/import-earnings", (req: Request, res: Response) => {
+    const { key, entries } = req.body;
+    if (key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden" });
+    if (!Array.isArray(entries)) return res.status(400).json({ error: "entries must be an array" });
+    const count = importEarningsData(entries);
+    res.json({ ok: true, imported: count });
   });
 
   return httpServer;
