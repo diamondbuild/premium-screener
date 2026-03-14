@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import db from "./db";
-import { runFullScan, getSP500Tickers } from "./scanner";
+import { runFullScan, getSP500Tickers, getTickersForUniverse, type Universe, UNIVERSE_LABELS } from "./scanner";
 import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey } from "./backtester";
 import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings } from "./earnings";
 import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
@@ -475,21 +475,25 @@ export async function registerRoutes(
   });
 
   // POST /api/scan — premium only (free users can't trigger scans)
-  app.post("/api/scan", requireSubscription, async (_req, res) => {
+  app.post("/api/scan", requireSubscription, async (req, res) => {
     const status = storage.getScanStatus();
     if (status.status === "scanning") {
       return res.status(409).json({ error: "Scan already in progress" });
     }
 
-    res.json({ message: "Scan started", mode: "live" });
-    runFullScan("manual").then(() => {
+    const universe = ((req.query.universe || req.body?.universe || "sp500") as string) as Universe;
+    const validUniverses: Universe[] = ["sp500", "nasdaq100", "both"];
+    const selectedUniverse: Universe = validUniverses.includes(universe) ? universe : "sp500";
+
+    res.json({ message: "Scan started", mode: "live", universe: selectedUniverse });
+    runFullScan("manual", 14, 60, 100, 0.65, selectedUniverse).then(() => {
       // Refresh earnings data after scan completes
       try { refreshEarningsData(); } catch (e) { console.error("Post-scan earnings refresh failed:", e); }
     }).catch(err => {
       console.error("Live rescan failed, using demo fallback:", err);
       const demoData = generateDemoData();
       storage.saveResults(demoData);
-      const tc2 = getSP500Tickers().length;
+      const tc2 = getTickersForUniverse(selectedUniverse).length;
       storage.setScanStatus({
         status: "complete",
         progress: 100,
@@ -500,10 +504,32 @@ export async function registerRoutes(
     });
   });
 
+  // GET /api/universes — list available stock universes
+  app.get("/api/universes", (_req, res) => {
+    const universes = (["sp500", "nasdaq100", "both"] as Universe[]).map(u => ({
+      id: u,
+      label: UNIVERSE_LABELS[u],
+      tickerCount: getTickersForUniverse(u).length,
+    }));
+    res.json({ universes });
+  });
+
   // GET /api/ticker-count — how many tickers are scanned
-  app.get("/api/ticker-count", (_req, res) => {
-    const tickers = getSP500Tickers();
-    res.json({ count: tickers.length, source: tickers === getSP500Tickers() ? "cached" : "fresh" });
+  app.get("/api/ticker-count", (req, res) => {
+    const universe = (req.query.universe as Universe) || "sp500";
+    const validUniverses: Universe[] = ["sp500", "nasdaq100", "both"];
+    const selectedUniverse: Universe = validUniverses.includes(universe) ? universe : "sp500";
+    const tickers = getTickersForUniverse(selectedUniverse);
+    res.json({
+      count: tickers.length,
+      universe: selectedUniverse,
+      label: UNIVERSE_LABELS[selectedUniverse],
+      counts: {
+        sp500: getTickersForUniverse("sp500").length,
+        nasdaq100: getTickersForUniverse("nasdaq100").length,
+        both: getTickersForUniverse("both").length,
+      },
+    });
   });
 
   // GET /api/strategy-summary
