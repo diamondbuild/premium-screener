@@ -82,20 +82,6 @@ const STRATEGY_COLORS: Record<string, string> = {
   iron_condor: "bg-chart-4 text-white dark:text-black",
 };
 
-type UniverseId = "sp500" | "nasdaq100" | "both";
-
-const UNIVERSE_OPTIONS: { id: UniverseId; label: string; short: string }[] = [
-  { id: "sp500", label: "S&P 500", short: "S&P 500" },
-  { id: "nasdaq100", label: "NASDAQ-100", short: "NDX 100" },
-  { id: "both", label: "S&P 500 + NASDAQ-100", short: "Combined" },
-];
-
-const UNIVERSE_LABELS: Record<UniverseId, string> = {
-  sp500: "S&P 500",
-  nasdaq100: "NASDAQ-100",
-  both: "S&P 500 + NASDAQ-100",
-};
-
 function ThemeToggle() {
   const [dark, setDark] = useState(() =>
     typeof window !== "undefined" &&
@@ -744,1008 +730,1264 @@ function PayoffDiagram({ trade }: { trade: StrategyTradeWithEarnings }) {
         {emLo > lo && (
           <>
             <line x1={toX(emLo)} y1={pad.top} x2={toX(emLo)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
-            <text x={toX(emLo)} y={pad.top + cH + 12} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
-              {fmt$(emLo)}
+            <text x={toX(emLo)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
+              EM {fmt$(emLo)}
             </text>
           </>
         )}
         {emHi < hi && (
           <>
             <line x1={toX(emHi)} y1={pad.top} x2={toX(emHi)} y2={pad.top + cH} stroke="hsl(217, 91%, 60%)" strokeWidth={0.5} strokeDasharray="2 2" />
-            <text x={toX(emHi)} y={pad.top + cH + 12} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
-              {fmt$(emHi)}
+            <text x={toX(emHi)} y={pad.top - 3} textAnchor="middle" fontSize={8} fill="hsl(217, 91%, 60%)">
+              EM {fmt$(emHi)}
             </text>
           </>
         )}
 
-        {/* Break-even lines */}
-        {breakEvens.map((be) => {
-          if (be < lo || be > hi) return null;
-          return (
-            <g key={be}>
-              <line x1={toX(be)} y1={pad.top} x2={toX(be)} y2={pad.top + cH} stroke="hsl(var(--foreground))" strokeWidth={0.75} strokeDasharray="4 2" opacity={0.5} />
-              <text x={toX(be)} y={pad.top - 4} textAnchor="middle" fontSize={8} fill="hsl(var(--foreground))" opacity={0.7}>
-                BE {fmt$(be)}
-              </text>
-            </g>
-          );
-        })}
+        {/* Break-even markers */}
+        {breakEvens.map((be, i) => be > lo && be < hi && (
+          <g key={i}>
+            <line x1={toX(be)} y1={zeroY - 4} x2={toX(be)} y2={zeroY + 4} stroke="hsl(43, 74%, 49%)" strokeWidth={2} />
+            <text x={toX(be)} y={pad.top + cH + 22} textAnchor="middle" fontSize={8} fill="hsl(43, 74%, 49%)">
+              BE {fmt$(be)}
+            </text>
+          </g>
+        ))}
 
-        {/* Y-axis labels */}
+        {/* Strike markers */}
+        {legs.filter(l => l.action === "sell").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+          <g key={`s${i}`}>
+            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(142, 71%, 45%)" strokeWidth={1.5} />
+          </g>
+        ))}
+        {legs.filter(l => l.action === "buy").map((leg, i) => leg.strikePrice > lo && leg.strikePrice < hi && (
+          <g key={`b${i}`}>
+            <line x1={toX(leg.strikePrice)} y1={pad.top + cH - 2} x2={toX(leg.strikePrice)} y2={pad.top + cH + 3} stroke="hsl(0, 72%, 51%)" strokeWidth={1.5} />
+          </g>
+        ))}
+
+        {/* Y axis labels */}
         {yTicks.map((v) => (
-          <text key={v} x={pad.left - 3} y={toY(v) + 3} textAnchor="end" fontSize={8} fill="hsl(var(--muted-foreground))">
-            {v >= 0 ? `$${v}` : `-$${Math.abs(v)}`}
+          <text key={v} x={pad.left - 4} y={toY(v) + 3} textAnchor="end" fontSize={9} fill="hsl(var(--muted-foreground))">
+            {v >= 0 ? "+" : ""}{v < 1000 && v > -1000 ? `$${v}` : `$${(v / 1000).toFixed(1)}k`}
           </text>
         ))}
+
+        {/* Max profit / max loss labels */}
+        <text x={W - pad.right} y={toY(maxPnl) - 4} textAnchor="end" fontSize={8} fill="hsl(142, 71%, 45%)" fontWeight={600}>
+          Max +{fmt$(maxPnl)}
+        </text>
+        {minPnl < 0 && minPnl > -100000 && (
+          <text x={W - pad.right} y={toY(minPnl) + 12} textAnchor="end" fontSize={8} fill="hsl(0, 72%, 51%)" fontWeight={600}>
+            Max {fmt$(minPnl)}
+          </text>
+        )}
       </svg>
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-1 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm" style={{ background: "hsl(217, 91%, 60%)", opacity: 0.3 }} />
+          Expected Move (±1σ)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm" style={{ background: "hsl(43, 74%, 49%)" }} />
+          Break-even
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-0.5" style={{ background: "hsl(var(--muted-foreground))" }} />
+          Current Price
+        </span>
+      </div>
     </div>
   );
 }
 
-// ── Trade card ──
-function TradeCard({
-  trade,
-  expanded,
-  onToggle,
-  watchlist,
-  onAddToWatchlist,
-}: {
-  trade: StrategyTradeWithEarnings;
-  expanded: boolean;
-  onToggle: () => void;
-  watchlist: WatchlistItem[];
-  onAddToWatchlist: (ticker: string) => void;
+function TradeCard({ trade, rank, expanded, onToggle, watchlist, onWatchlistAdd, isPinned, loggedTradeIds, onLogTrade }: {
+  trade: StrategyTradeWithEarnings; rank: number; expanded: boolean; onToggle: () => void;
+  watchlist: WatchlistItem[]; onWatchlistAdd: (ticker: string) => void; isPinned: boolean;
+  loggedTradeIds: string[]; onLogTrade: (trade: StrategyTradeWithEarnings) => void;
 }) {
+  const isUndefined = trade.maxLoss === -999999;
+  const isRedacted = (trade as any).redacted === true;
   const [showBacktest, setShowBacktest] = useState(false);
   const [showPayoff, setShowPayoff] = useState(false);
-  const strategy = trade.strategyType;
-  const colorClass = STRATEGY_COLORS[strategy] || "bg-muted text-foreground";
+  const isLogged = loggedTradeIds.includes(trade.id);
+  const premiumLabel = <span className="text-yellow-500 font-semibold text-xs">Premium</span>;
 
   return (
-    <Card
-      className={`p-4 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 ${expanded ? "border-primary/20" : ""}`}
-      onClick={onToggle}
-      data-testid={`trade-card-${trade.underlyingTicker}`}
-    >
+    <Card className={`p-4 hover-elevate ${isPinned ? "ring-1 ring-yellow-500/30 bg-yellow-500/[0.02]" : ""}`} data-testid={`card-trade-${rank}`}>
       {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <WatchlistStar ticker={trade.underlyingTicker} watchlist={watchlist} onAdd={onAddToWatchlist} />
-          <span className="font-bold text-base">{trade.underlyingTicker}</span>
-          <Badge className={`text-xs shrink-0 ${colorClass}`}>{STRATEGY_SHORT[strategy]}</Badge>
-          <EarningsBadge trade={trade} />
-          <IVRankBadge trade={trade} />
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="text-right">
-            <div className="text-sm font-bold tabular-nums text-profit">{fmt$(trade.netCredit)}</div>
-            <div className="text-xs text-muted-foreground">{fmtPct(trade.annualizedROC)} ann.</div>
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold tabular-nums shrink-0">
+            {rank}
           </div>
-          {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        </div>
-      </div>
-
-      {/* Score bar + key metrics */}
-      <div className="mt-2.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-          <span>Composite Score</span>
-          <span className="font-medium text-foreground">{trade.compositeScore.toFixed(0)}</span>
-        </div>
-        <ScoreBar score={trade.compositeScore} />
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
-        <div>
-          <span className="text-muted-foreground">PoP</span>
-          <div className="font-medium tabular-nums">{fmtPct(trade.probabilityOfProfit * 100)}</div>
-        </div>
-        <div>
-          <span className="text-muted-foreground">DTE</span>
-          <div className="font-medium tabular-nums">{trade.daysToExpiration}d</div>
-        </div>
-        <div>
-          <span className="text-muted-foreground">$/day</span>
-          <div className="font-medium tabular-nums">{fmt$(trade.premiumPerDay)}</div>
-        </div>
-      </div>
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="mt-4 space-y-3 border-t border-border pt-3">
-          {/* Leg details */}
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-              <Layers className="w-3 h-3" />
-              Option Legs
+            <div className="flex items-center gap-2 flex-wrap">
+              <WatchlistStar ticker={trade.underlyingTicker} watchlist={watchlist} onAdd={onWatchlistAdd} />
+              <span className="font-semibold text-sm" data-testid={`text-ticker-${rank}`}>
+                {trade.underlyingTicker}
+              </span>
+              <Badge className={`text-xs ${STRATEGY_COLORS[trade.strategyType]}`}>
+                {STRATEGY_SHORT[trade.strategyType]}
+              </Badge>
+              <DeltaZBadge z={trade.deltaZScore} />
+              <IVRankBadge trade={trade} />
+              <EarningsBadge trade={trade} />
+              {isPinned && (
+                <Badge variant="outline" className="text-xs border-yellow-500/40 text-yellow-600 dark:text-yellow-400">
+                  Watchlist
+                </Badge>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5 pl-12">
-              <span className="w-8 text-center">Type</span>
-              <span className="w-16 text-right">Strike</span>
-              <span className="w-14 text-right">Mid</span>
-              <span className="w-14 text-right">Delta</span>
-              <span className="w-14 text-right">IV</span>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {fmt$(trade.underlyingPrice)} · {isRedacted ? <>Exp {premiumLabel}</> : <>Exp {trade.expirationDate}</>} · {trade.daysToExpiration}d
             </div>
-            {trade.legs.map((leg, i) => <LegRow key={i} leg={leg} />)}
           </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-sm font-semibold tabular-nums">{trade.compositeScore.toFixed(1)}</div>
+          <div className="text-xs text-muted-foreground">Score</div>
+        </div>
+      </div>
 
-          {/* Full metrics */}
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Underlying</span>
-              <span className="font-mono tabular-nums">{fmt$(trade.underlyingPrice)}</span>
+      <ScoreBar score={trade.compositeScore} />
+
+      {/* Key metrics row */}
+      <div className="grid grid-cols-5 gap-2 mt-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">Credit</div>
+              <div className="text-sm font-medium tabular-nums">{isRedacted ? premiumLabel : fmt$(trade.netCredit)}</div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Expiration</span>
-              <span className="font-mono tabular-nums">{trade.expirationDate}</span>
+          </TooltipTrigger>
+          <TooltipContent>Net credit received per contract ({fmt$(trade.maxProfit)} total)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">Ann. ROC</div>
+              <div className="text-sm font-medium tabular-nums text-profit">{fmtPct(trade.annualizedROC)}</div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Net Credit</span>
-              <span className="font-mono tabular-nums text-profit">{fmt$(trade.netCredit)}</span>
+          </TooltipTrigger>
+          <TooltipContent>Annualized return on capital at risk</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">POP</div>
+              <div className="text-sm font-medium tabular-nums">{fmtPct(trade.probabilityOfProfit * 100)}</div>
             </div>
-            {trade.spreadWidth && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Width</span>
-                <span className="font-mono tabular-nums">{fmt$(trade.spreadWidth)}</span>
+          </TooltipTrigger>
+          <TooltipContent>Probability of profit</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">Max Loss</div>
+              <div className="text-sm font-medium tabular-nums text-loss">
+                {isRedacted ? premiumLabel : isUndefined ? "Undef." : fmt$(Math.abs(trade.maxLoss))}
               </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Ann. ROC</span>
-              <span className="font-mono tabular-nums">{fmtPct(trade.annualizedROC)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Delta Z</span>
-              <span className="font-mono tabular-nums">{trade.deltaZScore.toFixed(2)}σ</span>
+          </TooltipTrigger>
+          <TooltipContent>{isUndefined ? "Undefined risk — requires margin" : `Max loss per contract: ${fmt$(Math.abs(trade.maxLoss))}`}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">$/Day</div>
+              <div className="text-sm font-medium tabular-nums">{isRedacted ? premiumLabel : fmt$(trade.premiumPerDay)}</div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Avg IV</span>
-              <span className="font-mono tabular-nums">{fmtPct(trade.avgIV * 100)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">$/Day</span>
-              <span className="font-mono tabular-nums">{fmt$(trade.premiumPerDay)}</span>
-            </div>
-            {trade.breakEvenLow && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">BE Low</span>
-                <span className="font-mono tabular-nums">{fmt$(trade.breakEvenLow)}</span>
-              </div>
-            )}
-            {trade.breakEvenHigh && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">BE High</span>
-                <span className="font-mono tabular-nums">{fmt$(trade.breakEvenHigh)}</span>
-              </div>
-            )}
-            {trade.maxRisk && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Max Risk</span>
-                <span className="font-mono tabular-nums text-loss">-{fmt$(trade.maxRisk)}</span>
-              </div>
-            )}
+          </TooltipTrigger>
+          <TooltipContent>Premium earned per day per contract</TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* Expandable legs section + backtest button */}
+      <div className="flex items-center mt-3 pt-2 border-t border-border">
+        {isRedacted ? (
+          <div className="flex items-center gap-1.5 text-xs text-yellow-500 flex-1">
+            <Lock className="w-3.5 h-3.5" />
+            <span>Upgrade to view strikes, legs, P&L & backtest</span>
           </div>
-
-          {/* Action row: payoff + backtest toggles */}
-          <div className="flex items-center gap-2 pt-1">
+        ) : (
+        <button
+          className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer flex-1"
+          onClick={onToggle}
+          data-testid={`button-expand-${rank}`}
+        >
+          {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          <span>{trade.legs.length} leg{trade.legs.length > 1 ? "s" : ""}</span>
+          <span className="ml-auto flex items-center gap-3">
+            <span>Δ {trade.netDelta.toFixed(3)}</span>
+            <span>Θ {trade.netTheta.toFixed(3)}</span>
+            <span>IV {fmtPct(trade.avgIV * 100)}</span>
+            {trade.ivRank != null && <span>IVR {Math.round(trade.ivRank)}%</span>}
+            <span>OI {fmtNum(trade.minOpenInterest)}</span>
+          </span>
+        </button>
+        )}
+        {!isRedacted && (
+        <>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <button
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md transition-colors ${
-                showPayoff ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+              className={`ml-2 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                showPayoff
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
               }`}
-              onClick={(e) => { e.stopPropagation(); setShowPayoff(!showPayoff); }}
-              data-testid={`button-payoff-${trade.underlyingTicker}`}
+              onClick={(e) => { e.stopPropagation(); setShowPayoff(!showPayoff); if (!showPayoff) setShowBacktest(false); }}
+              data-testid={`button-payoff-${rank}`}
             >
               <Crosshair className="w-3 h-3" />
-              Payoff
+              <span className="hidden sm:inline">P&L</span>
             </button>
+          </TooltipTrigger>
+          <TooltipContent>Show P&L payoff diagram with expected move</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <button
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md transition-colors ${
-                showBacktest ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+              className={`ml-1.5 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                showBacktest
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
               }`}
-              onClick={(e) => { e.stopPropagation(); setShowBacktest(!showBacktest); if (showPayoff) setShowPayoff(false); }}
-              data-testid={`button-backtest-${trade.underlyingTicker}`}
+              onClick={(e) => { e.stopPropagation(); setShowBacktest(!showBacktest); if (!showBacktest) setShowPayoff(false); }}
+              data-testid={`button-backtest-${rank}`}
             >
               <LineChart className="w-3 h-3" />
-              Backtest
+              <span className="hidden sm:inline">Backtest</span>
             </button>
-          </div>
+          </TooltipTrigger>
+          <TooltipContent>Simulate this trade over 6 months of price history</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className={`ml-1.5 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                isLogged
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 cursor-default"
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={(e) => { e.stopPropagation(); if (!isLogged) onLogTrade(trade); }}
+              disabled={isLogged}
+              data-testid={`button-log-trade-${rank}`}
+            >
+              {isLogged ? <CheckCircle2 className="w-3 h-3" /> : <BookOpen className="w-3 h-3" />}
+              <span className="hidden sm:inline">{isLogged ? "Logged" : "Log"}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{isLogged ? "Trade already in your journal" : "Log this trade to your journal"}</TooltipContent>
+        </Tooltip>
+        </>
+        )}
+      </div>
 
-          {showPayoff && <PayoffDiagram trade={trade} />}
-          {showBacktest && <BacktestPanel trade={trade} onClose={() => setShowBacktest(false)} />}
+      {expanded && !isRedacted && (
+        <div className="mt-2 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium px-0.5">
+            <span className="w-10 text-center">Side</span>
+            <span className="w-8 text-center">Type</span>
+            <span className="w-16 text-right">Strike</span>
+            <span className="w-14 text-right">Mid</span>
+            <span className="w-14 text-right">Delta</span>
+            <span className="w-14 text-right">IV</span>
+          </div>
+          {trade.legs.map((leg, i) => <LegRow key={i} leg={leg} />)}
+
+          <div className="flex items-center gap-4 text-xs pt-2 border-t border-border text-muted-foreground">
+            {trade.breakEvenLow && <span>BE Low: {fmt$(trade.breakEvenLow)}</span>}
+            {trade.breakEvenHigh && <span>BE High: {fmt$(trade.breakEvenHigh)}</span>}
+            {trade.spreadWidth && <span>Width: ${trade.spreadWidth}</span>}
+            {trade.riskRewardRatio > 0 && <span>R:R {trade.riskRewardRatio.toFixed(2)}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Payoff diagram panel */}
+      {showPayoff && !isRedacted && (
+        <PayoffDiagram trade={trade} />
+      )}
+
+      {/* Backtest panel */}
+      {showBacktest && !isRedacted && (
+        <BacktestPanel trade={trade} onClose={() => setShowBacktest(false)} />
+      )}
+    </Card>
+  );
+}
+
+function KPICard({ icon: Icon, label, value, sub, color }: {
+  icon: typeof DollarSign; label: string; value: string; sub?: string; color?: string;
+}) {
+  const isPremiumLabel = value === "Premium";
+  return (
+    <Card className="p-3">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon className={`w-3.5 h-3.5 ${color || "text-muted-foreground"}`} />
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </div>
+      <div className={`text-lg font-semibold tabular-nums ${isPremiumLabel ? "text-yellow-500 flex items-center gap-1.5" : ""}`}>
+        {isPremiumLabel && <Lock className="w-3.5 h-3.5" />}
+        {value}
+      </div>
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
+    </Card>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Card key={i} className="p-4">
+          <div className="flex items-start gap-3 mb-3">
+            <Skeleton className="w-7 h-7 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3 w-56" />
+            </div>
+            <Skeleton className="h-6 w-12" />
+          </div>
+          <Skeleton className="h-1.5 w-full rounded-full" />
+          <div className="grid grid-cols-5 gap-2 mt-3">
+            {[1, 2, 3, 4, 5].map((j) => (
+              <div key={j} className="text-center space-y-1">
+                <Skeleton className="h-3 w-10 mx-auto" />
+                <Skeleton className="h-4 w-14 mx-auto" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ScanHistoryPanel({ history, onClose }: { history: ScanRecord[]; onClose: () => void }) {
+  return (
+    <Card className="p-4" data-testid="panel-scan-history">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold">Scan History</h3>
+        </div>
+        <Button size="sm" variant="ghost" onClick={onClose} className="text-xs h-7 px-2" data-testid="button-close-history">
+          Close
+        </Button>
+      </div>
+
+      {history.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-4">No scan history yet</p>
+      ) : (
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {history.map((scan) => (
+            <div
+              key={scan.id}
+              className="flex items-center gap-3 p-2.5 rounded-md border border-border text-xs"
+            >
+              <div className="shrink-0">
+                {scan.status === "complete" ? (
+                  <CheckCircle2 className="w-4 h-4 text-profit" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-loss" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-medium">
+                    Scan #{scan.id}
+                  </span>
+                  <Badge variant="outline" className="text-xs h-4 px-1">
+                    {scan.mode}
+                  </Badge>
+                </div>
+                <div className="text-muted-foreground truncate">
+                  {new Date(scan.scanDate).toLocaleString()} · {formatDuration(scan.durationMs)}
+                </div>
+              </div>
+              <div className="text-right shrink-0 tabular-nums">
+                <div className="font-medium">{scan.totalTrades}</div>
+                <div className="text-muted-foreground">trades</div>
+              </div>
+              <div className="hidden sm:grid grid-cols-4 gap-2 text-center shrink-0">
+                <div>
+                  <div className="font-medium">{scan.cspCount}</div>
+                  <div className="text-muted-foreground">CSP</div>
+                </div>
+                <div>
+                  <div className="font-medium">{scan.pcsCount}</div>
+                  <div className="text-muted-foreground">PCS</div>
+                </div>
+                <div>
+                  <div className="font-medium">{scan.strangleCount}</div>
+                  <div className="text-muted-foreground">STR</div>
+                </div>
+                <div>
+                  <div className="font-medium">{scan.icCount}</div>
+                  <div className="text-muted-foreground">IC</div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </Card>
   );
 }
 
-// ── Alert Modal ──
-function AlertModal({
-  isOpen,
-  onClose,
-  onCreate,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onCreate: (alert: { ticker: string; alertType: "price_above" | "price_below" | "iv_rank_above"; threshold: number }) => void;
+// ── Notification Bell ──
+function NotificationBell({ alerts, unseenCount, onMarkSeen }: {
+  alerts: Alert[];
+  unseenCount: number;
+  onMarkSeen: () => void;
 }) {
-  const [ticker, setTicker] = useState("");
-  const [alertType, setAlertType] = useState<"price_above" | "price_below" | "iv_rank_above">("price_above");
-  const [threshold, setThreshold] = useState("");
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <Card className="p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold">Create Price Alert</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Ticker</Label>
-            <Input
-              placeholder="e.g. AAPL"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value.toUpperCase())}
-              className="mt-1 h-8 text-sm"
-              data-testid="input-alert-ticker"
-            />
-          </div>
-          <div>
-            <Label className="text-xs">Alert Type</Label>
-            <div className="grid grid-cols-3 gap-1 mt-1">
-              {(["price_above", "price_below", "iv_rank_above"] as const).map(t => (
-                <button
-                  key={t}
-                  className={`px-2 py-1 text-xs rounded border transition-colors ${
-                    alertType === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
-                  }`}
-                  onClick={() => setAlertType(t)}
-                >
-                  {t === "price_above" ? "Above" : t === "price_below" ? "Below" : "IV Rank>"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Threshold</Label>
-            <Input
-              type="number"
-              placeholder={alertType === "iv_rank_above" ? "e.g. 50" : "e.g. 150.00"}
-              value={threshold}
-              onChange={(e) => setThreshold(e.target.value)}
-              className="mt-1 h-8 text-sm"
-              data-testid="input-alert-threshold"
-            />
-          </div>
-          <Button
-            className="w-full"
-            size="sm"
-            disabled={!ticker || !threshold}
-            onClick={() => {
-              onCreate({ ticker, alertType, threshold: parseFloat(threshold) });
-              setTicker(""); setThreshold("");
-              onClose();
-            }}
-            data-testid="button-create-alert"
-          >
-            Create Alert
-          </Button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ── Journal Entry Modal ──
-function JournalModal({
-  isOpen,
-  onClose,
-  onCreate,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onCreate: (entry: InsertJournalEntry) => void;
-}) {
-  const [ticker, setTicker] = useState("");
-  const [strategyType, setStrategyType] = useState("cash_secured_put");
-  const [netCredit, setNetCredit] = useState("");
-  const [notes, setNotes] = useState("");
-  const [entryDate, setEntryDate] = useState("");
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <Card className="p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold">New Journal Entry</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Ticker</Label>
-              <Input placeholder="AAPL" value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} className="mt-1 h-8 text-sm" data-testid="input-journal-ticker" />
-            </div>
-            <div>
-              <Label className="text-xs">Entry Date</Label>
-              <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} className="mt-1 h-8 text-sm" data-testid="input-journal-date" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Strategy</Label>
-            <div className="grid grid-cols-2 gap-1 mt-1">
-              {Object.entries(STRATEGY_SHORT).map(([key, label]) => (
-                <button key={key}
-                  className={`px-2 py-1 text-xs rounded border transition-colors ${
-                    strategyType === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
-                  }`}
-                  onClick={() => setStrategyType(key)}
-                >{label}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Net Credit ($)</Label>
-            <Input type="number" step="0.01" placeholder="e.g. 1.25" value={netCredit} onChange={e => setNetCredit(e.target.value)} className="mt-1 h-8 text-sm" data-testid="input-journal-credit" />
-          </div>
-          <div>
-            <Label className="text-xs">Notes</Label>
-            <textarea
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="Trade rationale, market conditions..."
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              data-testid="input-journal-notes"
-            />
-          </div>
-          <Button className="w-full" size="sm"
-            disabled={!ticker || !netCredit}
-            onClick={() => {
-              onCreate({
-                ticker,
-                strategyType: strategyType as StrategyType,
-                netCredit: parseFloat(netCredit),
-                notes: notes || undefined,
-                entryDate: entryDate || undefined,
-              });
-              setTicker(""); setNetCredit(""); setNotes(""); setEntryDate("");
-              onClose();
-            }}
-            data-testid="button-submit-journal"
-          >Save Entry</Button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ── Universe Picker (dropdown) ──
-function UniversePicker({ value, onChange }: { value: UniverseId; onChange: (v: UniverseId) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
+  // Close on click outside
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
 
-  const current = UNIVERSE_OPTIONS.find(o => o.id === value)!;
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/alerts/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+    },
+  });
+
+  const handleOpen = () => {
+    setOpen(!open);
+    if (!open && unseenCount > 0) {
+      onMarkSeen();
+    }
+  };
 
   return (
-    <div ref={ref} className="relative" data-testid="universe-picker">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted transition-colors"
-        data-testid="universe-picker-trigger"
+    <div className="relative" ref={panelRef}>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={handleOpen}
+        className="relative"
+        data-testid="button-notifications"
       >
-        <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="font-medium">{current.short}</span>
-        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+        {unseenCount > 0 ? (
+          <BellRing className="w-4 h-4 text-yellow-500" />
+        ) : (
+          <Bell className="w-4 h-4" />
+        )}
+        {unseenCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold px-1 tabular-nums" data-testid="badge-unseen-count">
+            {unseenCount > 99 ? "99+" : unseenCount}
+          </span>
+        )}
+      </Button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] rounded-md border border-border bg-popover shadow-lg py-1">
-          {UNIVERSE_OPTIONS.map(opt => (
-            <button
-              key={opt.id}
-              className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-muted transition-colors ${
-                opt.id === value ? "text-primary font-medium" : "text-foreground"
-              }`}
-              onClick={() => { onChange(opt.id); setOpen(false); }}
-              data-testid={`universe-option-${opt.id}`}
-            >
-              <span>{opt.label}</span>
-              {opt.id === value && <CheckCircle2 className="w-4 h-4 text-primary" />}
-            </button>
-          ))}
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 z-50 rounded-lg border border-border bg-card shadow-lg overflow-hidden" data-testid="panel-alerts">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-accent/30">
+            <div className="flex items-center gap-2">
+              <BellRing className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-semibold">Alerts</span>
+              {alerts.length > 0 && (
+                <Badge variant="secondary" className="text-xs h-4 px-1.5">{alerts.length}</Badge>
+              )}
+            </div>
+            <Button size="sm" variant="ghost" className="text-xs h-6 px-2" onClick={() => setOpen(false)}>
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto">
+            {alerts.length === 0 ? (
+              <div className="py-8 text-center">
+                <Bell className="w-6 h-6 text-muted-foreground mx-auto mb-2 opacity-40" />
+                <p className="text-xs text-muted-foreground">No alerts yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Set a score threshold on watchlist tickers</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {alerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className={`px-3 py-2.5 text-xs ${!alert.seen ? "bg-primary/5" : ""}`}
+                    data-testid={`alert-item-${alert.id}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="font-semibold">{alert.ticker}</span>
+                          <Badge className={`text-[10px] h-4 px-1 ${STRATEGY_COLORS[alert.strategyType] || "bg-muted"}`}>
+                            {STRATEGY_SHORT[alert.strategyType] || alert.strategyType}
+                          </Badge>
+                          <span className="font-medium tabular-nums text-profit">
+                            Score {alert.compositeScore.toFixed(1)}
+                          </span>
+                          {!alert.seen && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-muted-foreground tabular-nums">
+                          <span>{fmt$(alert.netCredit)} cr</span>
+                          <span>{fmtPct(alert.annualizedROC)} ROC</span>
+                          <span>{fmtPct(alert.probabilityOfProfit * 100)} POP</span>
+                        </div>
+                        <div className="text-muted-foreground mt-0.5">
+                          Exp {alert.expirationDate} · {alert.daysToExpiration}d · Threshold ≥{alert.threshold.toFixed(0)}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5">{timeAgo(alert.triggeredAt)}</div>
+                      </div>
+                      <button
+                        className="text-muted-foreground hover:text-loss transition-colors p-1 shrink-0"
+                        onClick={() => deleteMutation.mutate(alert.id)}
+                        data-testid={`alert-delete-${alert.id}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Main Dashboard ──
-export default function Dashboard() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [sortBy, setSortBy] = useState<SortField>("compositeScore");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
-  const [activeTab, setActiveTab] = useState<"scanner" | "watchlist" | "alerts" | "history" | "journal">("scanner");
-  const [showAlertModal, setShowAlertModal] = useState(false);
-  const [showJournalModal, setShowJournalModal] = useState(false);
-  const [watchlistInput, setWatchlistInput] = useState("");
-  const [showSortMenu, setShowSortMenu] = useState(false);
-  const sortMenuRef = useRef<HTMLDivElement>(null);
-  const [universe, setUniverse] = useState<UniverseId>("sp500");
+// ── Watchlist Panel ──
+function WatchlistPanel({ onClose }: { onClose: () => void }) {
+  const [newTicker, setNewTicker] = useState("");
+  const [newThreshold, setNewThreshold] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editThreshold, setEditThreshold] = useState("");
 
-  const isPro = user?.subscriptionTier === "pro";
-
-  // ── Data fetching ──
-  const tradesQuery = useQuery<StrategyTradeWithEarnings[]>({
-    queryKey: ["/api/trades"],
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const scanHistoryQuery = useQuery<ScanRecord[]>({
-    queryKey: ["/api/scan-history"],
-    staleTime: 60 * 1000,
-  });
-
-  const watchlistQuery = useQuery<WatchlistItem[]>({
+  const { data: watchlistData } = useQuery<{ watchlist: WatchlistItem[] }>({
     queryKey: ["/api/watchlist"],
-    staleTime: 30 * 1000,
+    refetchInterval: 10000,
   });
 
-  const alertsQuery = useQuery<Alert[]>({
-    queryKey: ["/api/alerts"],
-    staleTime: 30 * 1000,
-  });
+  const watchlist = watchlistData?.watchlist || [];
 
-  const journalQuery = useQuery<any[]>({
-    queryKey: ["/api/journal"],
-    staleTime: 60 * 1000,
-  });
-
-  // ── Sort menu close on outside click ──
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
-        setShowSortMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // ── Scan mutation ──
-  const scanMutation = useMutation({
-    mutationFn: async () => {
-      setScanStatus({ status: "running", progress: 0, currentTicker: "", totalTickers: 0, completedTickers: 0 });
-      const res = await apiRequest("POST", "/api/scan", { universe });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Scan failed" }));
-        throw new Error(err.message || "Scan failed");
-      }
-      return res.json();
+  const addMutation = useMutation({
+    mutationFn: async (data: { ticker: string; scoreThreshold: number | null }) => {
+      await apiRequest("POST", "/api/watchlist", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/trades"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/scan-history"] });
-      setScanStatus(null);
-      toast({ title: "Scan Complete", description: "Results updated." });
-    },
-    onError: (err: Error) => {
-      setScanStatus(null);
-      toast({ title: "Scan Failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  // ── Watchlist mutation ──
-  const addToWatchlistMutation = useMutation({
-    mutationFn: async (ticker: string) => {
-      const res = await apiRequest("POST", "/api/watchlist", { ticker });
-      if (!res.ok) throw new Error("Failed to add to watchlist");
-      return res.json();
-    },
-    onSuccess: (_, ticker) => {
       queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
-      toast({ title: `${ticker} added to watchlist` });
+      setNewTicker("");
+      setNewThreshold("");
     },
-    onError: () => toast({ title: "Error", description: "Could not add to watchlist", variant: "destructive" }),
   });
 
-  // ── Alert mutation ──
-  const createAlertMutation = useMutation({
-    mutationFn: async (alert: { ticker: string; alertType: "price_above" | "price_below" | "iv_rank_above"; threshold: number }) => {
-      const res = await apiRequest("POST", "/api/alerts", alert);
-      if (!res.ok) throw new Error("Failed to create alert");
-      return res.json();
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, scoreThreshold }: { id: number; scoreThreshold: number | null }) => {
+      await apiRequest("PATCH", `/api/watchlist/${id}`, { scoreThreshold });
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+      setEditingId(null);
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/watchlist/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+    },
+  });
+
+  const handleAdd = () => {
+    const ticker = newTicker.trim().toUpperCase();
+    if (!ticker) return;
+    const threshold = newThreshold ? parseFloat(newThreshold) : null;
+    addMutation.mutate({ ticker, scoreThreshold: threshold });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleAdd();
+  };
+
+  const handleSaveThreshold = (id: number) => {
+    const threshold = editThreshold ? parseFloat(editThreshold) : null;
+    updateMutation.mutate({ id, scoreThreshold: threshold });
+  };
+
+  return (
+    <Card className="p-4" data-testid="panel-watchlist">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Star className="w-4 h-4 text-yellow-500" />
+          <h3 className="text-sm font-semibold">Watchlist</h3>
+          {watchlist.length > 0 && (
+            <Badge variant="secondary" className="text-xs h-4 px-1.5">{watchlist.length}</Badge>
+          )}
+        </div>
+        <Button size="sm" variant="ghost" onClick={onClose} className="text-xs h-7 px-2" data-testid="button-close-watchlist">
+          Close
+        </Button>
+      </div>
+
+      {/* Add ticker form */}
+      <div className="flex items-center gap-2 mb-3">
+        <Input
+          placeholder="Ticker (e.g. AAPL)"
+          value={newTicker}
+          onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
+          onKeyDown={handleKeyDown}
+          className="h-8 text-xs flex-1"
+          maxLength={10}
+          data-testid="input-watchlist-ticker"
+        />
+        <Input
+          placeholder="Score ≥"
+          value={newThreshold}
+          onChange={(e) => setNewThreshold(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="h-8 text-xs w-20"
+          type="number"
+          min={0}
+          max={100}
+          data-testid="input-watchlist-threshold"
+        />
+        <Button
+          size="sm"
+          className="h-8 text-xs px-3"
+          onClick={handleAdd}
+          disabled={!newTicker.trim() || addMutation.isPending}
+          data-testid="button-watchlist-add"
+        >
+          <Plus className="w-3 h-3 mr-1" />
+          Add
+        </Button>
+      </div>
+
+      {addMutation.isError && (
+        <p className="text-xs text-loss mb-2">
+          {(addMutation.error as any)?.message?.includes("409") ? "Already on watchlist" : "Failed to add"}
+        </p>
+      )}
+
+      {/* Watchlist items */}
+      {watchlist.length === 0 ? (
+        <div className="py-4 text-center">
+          <p className="text-xs text-muted-foreground">No tickers yet. Add one above or click the star on any trade card.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-60 overflow-y-auto">
+          {watchlist.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-2 p-2 rounded-md border border-border text-xs group"
+              data-testid={`watchlist-item-${item.ticker}`}
+            >
+              <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 shrink-0" />
+              <span className="font-semibold w-14">{item.ticker}</span>
+
+              {editingId === item.id ? (
+                <div className="flex items-center gap-1.5 flex-1">
+                  <Input
+                    value={editThreshold}
+                    onChange={(e) => setEditThreshold(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveThreshold(item.id); if (e.key === "Escape") setEditingId(null); }}
+                    className="h-6 text-xs w-16"
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="Score"
+                    autoFocus
+                    data-testid={`input-edit-threshold-${item.ticker}`}
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => handleSaveThreshold(item.id)}>
+                    <CheckCircle2 className="w-3 h-3 text-profit" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setEditingId(null)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 text-muted-foreground">
+                    {item.scoreThreshold ? (
+                      <span className="tabular-nums">Alert ≥ {item.scoreThreshold.toFixed(0)}</span>
+                    ) : (
+                      <span className="opacity-50">No alert</span>
+                    )}
+                  </div>
+                  <button
+                    className="text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 p-0.5"
+                    onClick={() => { setEditingId(item.id); setEditThreshold(item.scoreThreshold?.toString() || ""); }}
+                    data-testid={`button-edit-threshold-${item.ticker}`}
+                  >
+                    <Settings2 className="w-3 h-3" />
+                  </button>
+                  <button
+                    className="text-muted-foreground hover:text-loss transition-colors opacity-0 group-hover:opacity-100 p-0.5"
+                    onClick={() => removeMutation.mutate(item.id)}
+                    data-testid={`button-remove-${item.ticker}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </>
+              )}
+
+              <span className="text-muted-foreground opacity-60">{timeAgo(item.addedAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+type StrategySummary = Record<string, { count: number; avgScore: number; avgROC: number; avgPOP: number }>;
+
+export default function Dashboard() {
+  const [strategy, setStrategy] = useState<FilterType>("all");
+  const [sortBy, setSortBy] = useState<SortField>("compositeScore");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [showHistory, setShowHistory] = useState(false);
+  const [showWatchlist, setShowWatchlist] = useState(false);
+  const [excludeEarnings, setExcludeEarnings] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(25);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const { data: allData, isLoading: allLoading } = useQuery<{ results: StrategyTradeWithEarnings[]; total: number; totalBeforeFilter?: number }>({
+    queryKey: ["/api/all-results", excludeEarnings ? "?excludeEarnings=1" : ""],
+    refetchInterval: 15000,
+  });
+
+  const { data: summaryData } = useQuery<StrategySummary>({
+    queryKey: ["/api/strategy-summary"],
+    refetchInterval: 15000,
+  });
+
+  const { data: scanStatus } = useQuery<ScanStatus>({
+    queryKey: ["/api/scan-status"],
+    refetchInterval: 3000,
+  });
+
+  const { data: historyData } = useQuery<{ history: ScanRecord[] }>({
+    queryKey: ["/api/scan-history"],
+    refetchInterval: 30000,
+  });
+
+  const { data: watchlistData } = useQuery<{ watchlist: WatchlistItem[] }>({
+    queryKey: ["/api/watchlist"],
+    refetchInterval: 10000,
+  });
+
+  const { data: alertsData } = useQuery<{ alerts: Alert[]; unseenCount: number }>({
+    queryKey: ["/api/alerts"],
+    refetchInterval: 5000,
+  });
+
+  const { data: loggedIdsData } = useQuery<{ ids: string[] }>({
+    queryKey: ["/api/journal/logged-ids"],
+    refetchInterval: 10000,
+  });
+  const loggedTradeIds = loggedIdsData?.ids || [];
+
+  // Strategy insights from backtesting data
+  interface InsightEntry { strategy: string; totalTrades: number; wins: number; losses: number; winRate: number; totalPnL: number; avgPnLPerTrade: number; tickersBacktested: number }
+  const { data: insightsData } = useQuery<{ backtest: InsightEntry[]; totalBacktestEntries: number }>({
+    queryKey: ["/api/insights"],
+    refetchInterval: 60000,
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/scan"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scan-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/all-results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/strategy-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scan-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
+    },
+  });
+
+  const markSeenMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/alerts/mark-seen", {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-      toast({ title: "Alert created" });
     },
-    onError: () => toast({ title: "Error", description: "Could not create alert", variant: "destructive" }),
   });
 
-  // ── Journal mutation ──
-  const createJournalMutation = useMutation({
-    mutationFn: async (entry: InsertJournalEntry) => {
-      const res = await apiRequest("POST", "/api/journal", entry);
-      if (!res.ok) throw new Error("Failed to create journal entry");
-      return res.json();
+  const addToWatchlistMutation = useMutation({
+    mutationFn: async (ticker: string) => {
+      await apiRequest("POST", "/api/watchlist", { ticker, scoreThreshold: null });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
+    },
+  });
+
+  const allResults = allData?.results || [];
+  const isScanning = scanStatus?.status === "scanning";
+  const watchlist = watchlistData?.watchlist || [];
+  const alerts = alertsData?.alerts || [];
+  const unseenCount = alertsData?.unseenCount || 0;
+  const watchlistTickers = new Set(watchlist.map(w => w.ticker));
+
+  // Filter by strategy
+  const filteredResults = strategy === "all" ? allResults : allResults.filter(r => r.strategyType === strategy);
+
+  // Sort results, with watchlist tickers pinned to top
+  const sortedResults = [...filteredResults].sort((a, b) => {
+    const aWatchlist = watchlistTickers.has(a.underlyingTicker) ? 1 : 0;
+    const bWatchlist = watchlistTickers.has(b.underlyingTicker) ? 1 : 0;
+    if (aWatchlist !== bWatchlist) return bWatchlist - aWatchlist;
+
+    switch (sortBy) {
+      case "annualizedROC": return b.annualizedROC - a.annualizedROC;
+      case "deltaZScore": return Math.abs(b.deltaZScore) - Math.abs(a.deltaZScore);
+      case "probabilityOfProfit": return b.probabilityOfProfit - a.probabilityOfProfit;
+      case "premiumPerDay": return b.premiumPerDay - a.premiumPerDay;
+      case "netCredit": return b.netCredit - a.netCredit;
+      case "ivRank": return (b.ivRank ?? -1) - (a.ivRank ?? -1);
+      default: return b.compositeScore - a.compositeScore;
+    }
+  });
+
+  // Reset visible count when filter changes
+  const prevStrategyRef = useRef(strategy);
+  if (prevStrategyRef.current !== strategy) {
+    prevStrategyRef.current = strategy;
+    setVisibleCount(25);
+  }
+
+  const visibleResults = sortedResults.slice(0, visibleCount);
+  const hasMore = visibleCount < sortedResults.length;
+
+  // KPIs from top 5 picks
+  const top5 = sortedResults.slice(0, 5);
+  const avgROC = top5.length > 0 ? top5.reduce((s, p) => s + p.annualizedROC, 0) / top5.length : 0;
+  const avgPOP = top5.length > 0 ? top5.reduce((s, p) => s + p.probabilityOfProfit, 0) / top5.length * 100 : 0;
+  const avgDZ = top5.length > 0 ? top5.reduce((s, p) => s + Math.abs(p.deltaZScore), 0) / top5.length : 0;
+  const isRedactedData = top5.length > 0 && (top5[0] as any).redacted === true;
+  const totalCredit = isRedactedData ? 0 : top5.reduce((s, p) => s + p.netCredit * 100, 0);
+
+  const scanHistory = historyData?.history || [];
+
+  const { toast } = useToast();
+
+  const logTradeMutation = useMutation({
+    mutationFn: async (entry: InsertJournalEntry) => {
+      await apiRequest("POST", "/api/journal", entry);
+    },
+    onSuccess: (_data, entry) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/logged-ids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal"] });
-      toast({ title: "Journal entry saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/stats"] });
+      toast({ title: "Trade logged", description: `${entry.ticker} ${STRATEGY_SHORT[entry.strategyType]} added to journal` });
     },
-    onError: () => toast({ title: "Error", description: "Could not save journal entry", variant: "destructive" }),
+    onError: (err: Error) => {
+      toast({ title: "Failed to log trade", description: err.message, variant: "destructive" });
+    },
   });
 
-  // ── Filter + sort trades ──
-  const allTrades = tradesQuery.data ?? [];
-  const filteredTrades = allTrades
-    .filter(t => filter === "all" || t.strategyType === filter)
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "annualizedROC": return b.annualizedROC - a.annualizedROC;
-        case "deltaZScore": return b.deltaZScore - a.deltaZScore;
-        case "probabilityOfProfit": return b.probabilityOfProfit - a.probabilityOfProfit;
-        case "premiumPerDay": return b.premiumPerDay - a.premiumPerDay;
-        case "netCredit": return b.netCredit - a.netCredit;
-        case "ivRank": return (b.ivRank ?? 0) - (a.ivRank ?? 0);
-        default: return b.compositeScore - a.compositeScore;
-      }
-    });
+  const handleLogTrade = (trade: StrategyTradeWithEarnings) => {
+    const entry: InsertJournalEntry = {
+      ticker: trade.underlyingTicker,
+      strategyType: trade.strategyType,
+      legs: trade.legs,
+      expirationDate: trade.expirationDate,
+      entryDate: new Date().toISOString().split("T")[0],
+      entryCredit: trade.netCredit,
+      contracts: 1,
+      underlyingPriceAtEntry: trade.underlyingPrice,
+      maxLoss: trade.maxLoss,
+      spreadWidth: trade.spreadWidth ?? null,
+      compositeScoreAtEntry: trade.compositeScore,
+      ivRankAtEntry: trade.ivRank ?? null,
+      scanTradeId: trade.id,
+      notes: null,
+      tags: [],
+    };
+    logTradeMutation.mutate(entry);
+  };
 
-  const lastScan = scanHistoryQuery.data?.[0];
-  const isScanning = scanMutation.isPending;
-
-  // ── Ticker count query (for universe display) ──
-  const tickerCountQuery = useQuery<{ universe: string; count: number }>({
-    queryKey: ["/api/ticker-count", universe],
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/ticker-count?universe=${universe}`);
-      return res.json();
-    },
-    staleTime: 60 * 1000,
-  });
-
-  const SORT_OPTIONS: { value: SortField; label: string }[] = [
-    { value: "compositeScore", label: "Composite Score" },
-    { value: "annualizedROC", label: "Ann. ROC" },
-    { value: "deltaZScore", label: "Delta Z-Score" },
-    { value: "probabilityOfProfit", label: "Prob. of Profit" },
-    { value: "premiumPerDay", label: "$/Day" },
-    { value: "netCredit", label: "Net Credit" },
-    { value: "ivRank", label: "IV Rank" },
-  ];
+  const handleWatchlistAdd = (ticker: string) => {
+    addToWatchlistMutation.mutate(ticker);
+  };
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top nav */}
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+      {/* Header */}
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-                <Target className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-base tracking-tight">PremiumScreener</span>
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-label="Premium Screener">
+              <rect x="2" y="2" width="28" height="28" rx="6" stroke="currentColor" strokeWidth="2" />
+              <path d="M8 22L14 10L20 18L26 8" stroke="hsl(217, 91%, 60%)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="14" cy="10" r="2" fill="hsl(142, 71%, 50%)" />
+              <circle cx="20" cy="18" r="2" fill="hsl(217, 91%, 60%)" />
+            </svg>
+            <div>
+              <h1 className="text-sm font-semibold tracking-tight">Premium Screener</h1>
+              <p className="text-xs text-muted-foreground">S&P 500 + NASDAQ 100 Options · {scanStatus?.totalTickers || 518} Tickers · Sell Premium</p>
             </div>
-            <UniversePicker value={universe} onChange={setUniverse} />
           </div>
-          <div className="flex items-center gap-2">
-            <FreshnessIndicator lastUpdated={lastScan?.completedAt ?? null} isScanning={isScanning} />
+          <div className="flex items-center gap-1.5">
+            <FreshnessIndicator
+              lastUpdated={scanStatus?.lastUpdated || null}
+              isScanning={isScanning}
+            />
+            <NotificationBell
+              alerts={alerts}
+              unseenCount={unseenCount}
+              onMarkSeen={() => markSeenMutation.mutate()}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs h-8 px-2"
+              onClick={() => { setShowWatchlist(!showWatchlist); if (!showWatchlist) setShowHistory(false); }}
+              data-testid="button-watchlist"
+            >
+              <Star className={`w-3.5 h-3.5 mr-1 ${watchlist.length > 0 ? "text-yellow-500 fill-yellow-500" : ""}`} />
+              <span className="hidden sm:inline">Watchlist</span>
+              {watchlist.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1">{watchlist.length}</Badge>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs h-8 px-2"
+              onClick={() => { setShowHistory(!showHistory); if (!showHistory) setShowWatchlist(false); }}
+              data-testid="button-history"
+            >
+              <History className="w-3.5 h-3.5 mr-1" />
+              <span className="hidden sm:inline">History</span>
+            </Button>
+            <Link href="/journal">
+              <Button size="sm" variant="ghost" className="text-xs h-8 px-2" data-testid="button-journal">
+                <BookOpen className="w-3.5 h-3.5 mr-1" />
+                <span className="hidden sm:inline">Journal</span>
+              </Button>
+            </Link>
+            <Button size="sm" variant="secondary" onClick={() => scanMutation.mutate()} disabled={isScanning || scanMutation.isPending} data-testid="button-rescan">
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isScanning ? "animate-spin" : ""}`} />
+              {isScanning ? `${scanStatus?.progress || 0}%` : "Rescan"}
+            </Button>
             <ThemeToggle />
             <UserMenu />
           </div>
         </div>
+
+        {/* Scan progress bar + details */}
+        {isScanning && (
+          <div>
+            <div className="h-0.5 bg-muted">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${scanStatus?.progress || 0}%` }}
+              />
+            </div>
+            <div className="px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-3 bg-muted/30" data-testid="text-scan-progress">
+              <Activity className="w-3 h-3 animate-pulse" />
+              <span>Scanning {scanStatus?.scannedTickers || 0} / {scanStatus?.totalTickers || 0} tickers</span>
+              {(scanStatus?.totalTickers || 0) > 100 && (
+                <span className="text-muted-foreground/60">· ~{Math.ceil(((scanStatus?.totalTickers || 0) * 0.55) / 60)} min est.</span>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* Upgrade Banner */}
+      <main className="max-w-6xl mx-auto px-4 py-5 space-y-5">
+
         <UpgradeBanner />
 
-        {/* ── Scanner tab ── */}
-        {activeTab === "scanner" && (
-          <>
-            {/* Controls bar */}
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Strategy filter tabs */}
-              <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterType)} className="flex-1 min-w-0">
-                <TabsList className="h-8">
-                  {Object.entries(STRATEGY_LABELS).map(([k, v]) => (
-                    <TabsTrigger key={k} value={k} className="text-xs h-full px-3">{v}</TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+        {/* Watchlist Panel (collapsible) */}
+        {showWatchlist && (
+          <WatchlistPanel onClose={() => setShowWatchlist(false)} />
+        )}
 
-              {/* Sort picker */}
-              <div className="relative" ref={sortMenuRef}>
+        {/* Scan History Panel (collapsible) */}
+        {showHistory && (
+          <ScanHistoryPanel
+            history={scanHistory}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KPICard icon={DollarSign} label="Avg Ann. ROC" value={isRedactedData ? "Premium" : fmtPct(avgROC)} sub="Across top picks" color="text-profit" />
+          <KPICard icon={Shield} label="Avg POP" value={isRedactedData ? "Premium" : fmtPct(avgPOP)} sub="Win probability" color="text-chart-1" />
+          <KPICard icon={Zap} label="Avg Delta Z" value={isRedactedData ? "Premium" : avgDZ.toFixed(1) + "σ"} sub="Above recent avg" color="text-chart-3" />
+          <KPICard icon={Target} label="Total Credit" value={isRedactedData ? "Premium" : fmt$(totalCredit)} sub={`${top5.length} trades`} color="text-chart-4" />
+        </div>
+
+        {/* Strategy Summary Cards */}
+        {summaryData && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {(["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const).map(st => {
+              const s = summaryData[st];
+              if (!s) return null;
+              const isActive = strategy === st;
+              return (
                 <button
-                  className="flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted transition-colors"
-                  onClick={() => setShowSortMenu(s => !s)}
-                  data-testid="button-sort"
+                  key={st}
+                  className={`text-left rounded-md border p-3 transition-colors cursor-pointer ${
+                    isActive ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                  onClick={() => setStrategy(strategy === st ? "all" : st)}
+                  data-testid={`btn-strat-${st}`}
                 >
-                  <ArrowDownUp className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{SORT_OPTIONS.find(o => o.value === sortBy)?.label ?? "Sort"}</span>
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge className={`text-xs ${STRATEGY_COLORS[st]}`}>
+                      {STRATEGY_SHORT[st]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{s.count} found</span>
+                  </div>
+                  <div className="flex items-baseline gap-3 text-xs tabular-nums">
+                    <span>ROC <span className="font-medium text-foreground">{fmtPct(s.avgROC)}</span></span>
+                    <span>POP <span className="font-medium text-foreground">{fmtPct(parseFloat(String(s.avgPOP)))}</span></span>
+                  </div>
                 </button>
-                {showSortMenu && (
-                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border border-border bg-popover shadow-lg py-1">
-                    {SORT_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors ${
-                          sortBy === opt.value ? "text-primary font-medium" : "text-foreground"
-                        }`}
-                        onClick={() => { setSortBy(opt.value); setShowSortMenu(false); }}
-                        data-testid={`sort-option-${opt.value}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              );
+            })}
+          </div>
+        )}
 
-              {/* Scan button */}
-              <Button
-                onClick={() => scanMutation.mutate()}
-                disabled={isScanning}
-                className="h-8 px-4 text-sm"
-                data-testid="button-scan"
-              >
-                {isScanning ? (
-                  <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Scanning...</>
-                ) : (
-                  <><Zap className="w-3.5 h-3.5 mr-1.5" />Scan {UNIVERSE_LABELS[universe]}</>
-                )}
-              </Button>
-            </div>
+        {/* Filters row */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
+          <Tabs value={strategy} onValueChange={(v) => setStrategy(v as FilterType)}>
+            <TabsList className="flex-wrap h-auto gap-0.5">
+              <TabsTrigger value="all" data-testid="tab-all" className="text-xs">All</TabsTrigger>
+              <TabsTrigger value="cash_secured_put" data-testid="tab-csp" className="text-xs">
+                <TrendingDown className="w-3 h-3 mr-1" />CSP
+              </TabsTrigger>
+              <TabsTrigger value="put_credit_spread" data-testid="tab-pcs" className="text-xs">
+                <Layers className="w-3 h-3 mr-1" />PCS
+              </TabsTrigger>
+              <TabsTrigger value="strangle" data-testid="tab-str" className="text-xs">
+                <ArrowDownUp className="w-3 h-3 mr-1" />Strangle
+              </TabsTrigger>
+              <TabsTrigger value="iron_condor" data-testid="tab-ic" className="text-xs">
+                <Shield className="w-3 h-3 mr-1" />Iron Condor
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-            {/* Scan progress */}
-            {scanStatus && (
-              <Card className="p-4">
-                <div className="flex items-center gap-3">
-                  <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="font-medium">
-                        Scanning {scanStatus.currentTicker || "..."}
-                      </span>
-                      <span className="text-muted-foreground tabular-nums">
-                        {scanStatus.completedTickers} / {scanStatus.totalTickers}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all duration-300"
-                        style={{ width: `${scanStatus.totalTickers > 0 ? (scanStatus.completedTickers / scanStatus.totalTickers) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* Results count + universe info */}
-            {!isScanning && allTrades.length > 0 && (
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>
-                  {filteredTrades.length} opportunity{filteredTrades.length !== 1 ? "ies" : "y"}
-                  {filter !== "all" && ` · ${STRATEGY_LABELS[filter]}`}
-                  {tickerCountQuery.data && (
-                    <span className="ml-2 text-xs">
-                      · Scanning {tickerCountQuery.data.count} tickers ({UNIVERSE_LABELS[universe]})
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs">Sorted by {SORT_OPTIONS.find(o => o.value === sortBy)?.label}</span>
-              </div>
-            )}
-
-            {/* Trade list */}
-            {tradesQuery.isLoading ? (
-              <div className="space-y-3">
-                {[...Array(3)].map((_, i) => (
-                  <Card key={i} className="p-4">
-                    <div className="space-y-2">
-                      <Skeleton className="h-5 w-32" />
-                      <Skeleton className="h-3 w-full" />
-                      <Skeleton className="h-3 w-3/4" />
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ) : tradesQuery.isError ? (
-              <Card className="p-8 text-center">
-                <AlertTriangle className="w-8 h-8 text-loss mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Failed to load trades. Try scanning.</p>
-              </Card>
-            ) : filteredTrades.length === 0 ? (
-              <Card className="p-8 text-center">
-                <Target className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  {allTrades.length === 0 ? "No scan results yet. Click Scan to begin." : "No opportunities match current filters."}
-                </p>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {filteredTrades.map(trade => (
-                  <TradeCard
-                    key={trade.id}
-                    trade={trade}
-                    expanded={expandedId === trade.id}
-                    onToggle={() => setExpandedId(expandedId === trade.id ? null : trade.id)}
-                    watchlist={watchlistQuery.data ?? []}
-                    onAddToWatchlist={(ticker) => addToWatchlistMutation.mutate(ticker)}
+          <div className="flex items-center gap-3 overflow-x-auto max-w-full">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Switch
+                    id="exclude-earnings"
+                    checked={excludeEarnings}
+                    onCheckedChange={setExcludeEarnings}
+                    data-testid="switch-exclude-earnings"
+                    className="scale-75 origin-right"
                   />
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                  <Label
+                    htmlFor="exclude-earnings"
+                    className={`text-xs cursor-pointer flex items-center gap-1 ${excludeEarnings ? "text-orange-600 dark:text-orange-400 font-medium" : "text-muted-foreground"}`}
+                  >
+                    <CalendarX className="w-3 h-3" />
+                    <span className="hidden sm:inline">Excl. Earnings</span>
+                    <span className="sm:hidden">ER</span>
+                  </Label>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {excludeEarnings
+                  ? "Hiding trades with earnings before expiration"
+                  : "Show all trades — toggle to exclude trades with upcoming earnings"}
+              </TooltipContent>
+            </Tooltip>
 
-        {/* ── Watchlist tab ── */}
-        {activeTab === "watchlist" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder="Add ticker (e.g. AAPL)"
-                value={watchlistInput}
-                onChange={(e) => setWatchlistInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && watchlistInput) {
-                    addToWatchlistMutation.mutate(watchlistInput);
-                    setWatchlistInput("");
-                  }
-                }}
-                className="h-8 text-sm max-w-xs"
-                data-testid="input-watchlist-ticker"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { if (watchlistInput) { addToWatchlistMutation.mutate(watchlistInput); setWatchlistInput(""); } }}
-                data-testid="button-add-watchlist"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add
-              </Button>
-            </div>
-            {watchlistQuery.isLoading ? (
-              <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : (watchlistQuery.data ?? []).length === 0 ? (
-              <Card className="p-8 text-center">
-                <Star className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Watchlist empty. Add tickers or star trades.</p>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {(watchlistQuery.data ?? []).map(item => (
-                  <Card key={item.id} className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                      <div>
-                        <div className="font-medium text-sm">{item.ticker}</div>
-                        {item.notes && <div className="text-xs text-muted-foreground">{item.notes}</div>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {item.alertPrice && (
-                        <Badge variant="outline" className="text-xs">
-                          <Bell className="w-3 h-3 mr-1" />{fmt$(item.alertPrice)}
-                        </Badge>
-                      )}
-                      <button
-                        className="text-muted-foreground hover:text-loss transition-colors"
-                        onClick={async () => {
-                          await apiRequest("DELETE", `/api/watchlist/${item.id}`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/watchlist"] });
-                        }}
-                        data-testid={`button-remove-watchlist-${item.ticker}`}
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Alerts tab ── */}
-        {activeTab === "alerts" && (
-          <div className="space-y-4">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setShowAlertModal(true)} data-testid="button-new-alert">
-                <Plus className="w-3.5 h-3.5 mr-1" />New Alert
-              </Button>
-            </div>
-            {alertsQuery.isLoading ? (
-              <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : (alertsQuery.data ?? []).length === 0 ? (
-              <Card className="p-8 text-center">
-                <Bell className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No alerts set. Create one to get notified.</p>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {(alertsQuery.data ?? []).map(alert => (
-                  <Card key={alert.id} className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <BellRing className="w-4 h-4 text-primary" />
-                      <div>
-                        <div className="font-medium text-sm">{alert.ticker}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {alert.alertType === "price_above" ? "Price above" : alert.alertType === "price_below" ? "Price below" : "IV Rank above"} {alert.alertType === "iv_rank_above" ? alert.threshold : fmt$(alert.threshold)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={alert.isActive ? "default" : "secondary"} className="text-xs">
-                        {alert.isActive ? "Active" : "Triggered"}
-                      </Badge>
-                      <button
-                        className="text-muted-foreground hover:text-loss transition-colors"
-                        onClick={async () => {
-                          await apiRequest("DELETE", `/api/alerts/${alert.id}`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-                        }}
-                        data-testid={`button-delete-alert-${alert.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Scan History tab ── */}
-        {activeTab === "history" && (
-          <div className="space-y-3">
-            {scanHistoryQuery.isLoading ? (
-              <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : (scanHistoryQuery.data ?? []).length === 0 ? (
-              <Card className="p-8 text-center">
-                <History className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No scan history yet.</p>
-              </Card>
-            ) : (
-              (scanHistoryQuery.data ?? []).map(record => (
-                <Card key={record.id} className="p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {record.status === "completed" ? (
-                        <CheckCircle2 className="w-4 h-4 text-profit" />
-                      ) : record.status === "failed" ? (
-                        <XCircle className="w-4 h-4 text-loss" />
-                      ) : (
-                        <Timer className="w-4 h-4 text-chart-3 animate-pulse" />
-                      )}
-                      <div>
-                        <div className="text-sm font-medium">
-                          {record.status === "completed" ? `${record.tradesFound} trade${record.tradesFound !== 1 ? "s" : ""} found` : record.status === "failed" ? "Scan failed" : "Running..."}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {record.startedAt ? timeAgo(record.startedAt) : ""}
-                          {record.durationMs ? ` · ${formatDuration(record.durationMs)}` : ""}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline" className="text-xs">{record.status}</Badge>
-                      {record.tickersScanned && (
-                        <div className="text-xs text-muted-foreground mt-0.5">{record.tickersScanned} tickers</div>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* ── Journal tab ── */}
-        {activeTab === "journal" && (
-          <div className="space-y-4">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={() => setShowJournalModal(true)} data-testid="button-new-journal">
-                <Plus className="w-3.5 h-3.5 mr-1" />New Entry
-              </Button>
-            </div>
-            {journalQuery.isLoading ? (
-              <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
-            ) : (journalQuery.data ?? []).length === 0 ? (
-              <Card className="p-8 text-center">
-                <BookOpen className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">No journal entries yet. Log your trades to track performance.</p>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {(journalQuery.data ?? []).map((entry: any) => (
-                  <Card key={entry.id} className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <div className="text-sm font-medium">{entry.ticker} <Badge className={`text-xs ${STRATEGY_COLORS[entry.strategyType] ?? ""}`}>{STRATEGY_SHORT[entry.strategyType] ?? entry.strategyType}</Badge></div>
-                          <div className="text-xs text-muted-foreground">
-                            {entry.entryDate ?? ""} · Credit: {fmt$(entry.netCredit)}
-                          </div>
-                          {entry.notes && <div className="text-xs text-muted-foreground mt-0.5 italic">{entry.notes}</div>}
-                        </div>
-                      </div>
-                      <button
-                        className="text-muted-foreground hover:text-loss transition-colors shrink-0"
-                        onClick={async () => {
-                          await apiRequest("DELETE", `/api/journal/${entry.id}`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/journal"] });
-                        }}
-                        data-testid={`button-delete-journal-${entry.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Floating tab bar */}
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40">
-          <div className="flex items-center gap-1 bg-background/95 backdrop-blur border border-border rounded-full px-2 py-1.5 shadow-lg">
-            {([
-              { id: "scanner", icon: Target, label: "Scanner" },
-              { id: "watchlist", icon: Star, label: "Watchlist" },
-              { id: "alerts", icon: Bell, label: "Alerts" },
-              { id: "history", icon: History, label: "History" },
-              { id: "journal", icon: BookOpen, label: "Journal" },
-            ] as const).map(({ id, icon: Icon, label }) => (
-              <button
-                key={id}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  activeTab === id
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-                onClick={() => setActiveTab(id)}
-                data-testid={`tab-${id}`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{label}</span>
-              </button>
-            ))}
+            <span className="text-xs text-muted-foreground shrink-0">Sort:</span>
+            <Tabs value={sortBy} onValueChange={(v) => setSortBy(v as SortField)} className="shrink-0">
+              <TabsList className="h-8">
+                <TabsTrigger value="compositeScore" className="text-xs px-2 h-6">Score</TabsTrigger>
+                <TabsTrigger value="annualizedROC" className="text-xs px-2 h-6">ROC</TabsTrigger>
+                <TabsTrigger value="deltaZScore" className="text-xs px-2 h-6">Delta Z</TabsTrigger>
+                <TabsTrigger value="probabilityOfProfit" className="text-xs px-2 h-6">POP</TabsTrigger>
+                <TabsTrigger value="netCredit" className="text-xs px-2 h-6">Credit</TabsTrigger>
+                <TabsTrigger value="ivRank" className="text-xs px-2 h-6">IVR</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </div>
 
-      </main>
+        {/* Methodology */}
+        <Card className="p-3 bg-accent/30">
+          <div className="flex items-start gap-2">
+            <Info className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Scoring: </span>
+              Delta Z-Score (35%) measures how rich premium is vs. the chain average.
+              Annualized ROC (25%) = net credit / max risk, annualized.
+              Probability of Profit (25%) from delta-based estimation.
+              Liquidity (15%) from volume/OI ratio.
+              Click any card to expand leg details. Star a ticker to add to watchlist.
+            </div>
+          </div>
+        </Card>
 
-      {/* Modals */}
-      <AlertModal
-        isOpen={showAlertModal}
-        onClose={() => setShowAlertModal(false)}
-        onCreate={(alert) => createAlertMutation.mutate(alert)}
-      />
-      <JournalModal
-        isOpen={showJournalModal}
-        onClose={() => setShowJournalModal(false)}
-        onCreate={(entry) => createJournalMutation.mutate(entry)}
-      />
+        {/* Strategy Insights from backtest data */}
+        {insightsData && insightsData.backtest.length > 0 && (
+          <Card className="p-3" data-testid="strategy-insights">
+            <div className="flex items-center gap-2 mb-2">
+              <PieChart className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-semibold">Historical Win Rates</span>
+              <span className="text-[10px] text-muted-foreground ml-auto">
+                {insightsData.totalBacktestEntries} backtests across {insightsData.backtest.reduce((s, b) => s + b.tickersBacktested, 0)} tickers
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {insightsData.backtest.filter(b => b.totalTrades > 0).map(b => (
+                <div key={b.strategy} className="relative overflow-hidden rounded-lg border border-border p-2.5">
+                  {/* Win rate bar background */}
+                  <div
+                    className="absolute inset-0 opacity-[0.06]"
+                    style={{
+                      background: b.winRate >= 60 ? "hsl(142, 71%, 45%)" : b.winRate >= 40 ? "hsl(43, 74%, 49%)" : "hsl(0, 72%, 51%)",
+                      width: `${Math.min(b.winRate, 100)}%`,
+                    }}
+                  />
+                  <div className="relative">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Badge className={`text-[10px] ${STRATEGY_COLORS[b.strategy] || "bg-muted text-muted-foreground"}`}>
+                        {STRATEGY_SHORT[b.strategy] || b.strategy}
+                      </Badge>
+                    </div>
+                    <div className={`text-lg font-bold tabular-nums ${b.winRate >= 60 ? "text-profit" : b.winRate >= 40 ? "" : "text-loss"}`}>
+                      {b.winRate}%
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      <span>{b.wins}W / {b.losses}L</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span className={b.avgPnLPerTrade >= 0 ? "text-profit" : "text-loss"}>
+                        avg {b.avgPnLPerTrade >= 0 ? "+" : ""}{fmt$(b.avgPnLPerTrade)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Earnings filter active banner */}
+        {excludeEarnings && allData?.totalBeforeFilter && allData.totalBeforeFilter > allData.total && (
+          <Card className="p-3 border-orange-500/30 bg-orange-500/5">
+            <div className="flex items-center gap-2 text-xs">
+              <CalendarX className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400 shrink-0" />
+              <span className="text-orange-700 dark:text-orange-300">
+                Earnings filter active — excluding {allData.totalBeforeFilter - allData.total} trade{allData.totalBeforeFilter - allData.total !== 1 ? "s" : ""} with earnings before expiry
+              </span>
+            </div>
+          </Card>
+        )}
+
+        {/* All Trade Ideas */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold">
+              {STRATEGY_LABELS[strategy]} Trade Ideas
+            </h2>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {sortedResults.length} trades
+            </span>
+          </div>
+
+          {allLoading ? (
+            <LoadingSkeleton />
+          ) : sortedResults.length === 0 ? (
+            <Card className="p-8 text-center">
+              <Activity className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No results for this strategy. Try a different filter or run a scan.</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {visibleResults.map((trade, i) => (
+                <TradeCard
+                  key={trade.id}
+                  trade={trade}
+                  rank={i + 1}
+                  expanded={expandedIds.has(trade.id)}
+                  onToggle={() => toggleExpand(trade.id)}
+                  watchlist={watchlist}
+                  onWatchlistAdd={handleWatchlistAdd}
+                  isPinned={watchlistTickers.has(trade.underlyingTicker)}
+                  loggedTradeIds={loggedTradeIds}
+                  onLogTrade={handleLogTrade}
+                />
+              ))}
+              {hasMore && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVisibleCount(prev => prev + 25)}
+                    data-testid="button-show-more"
+                    className="text-xs"
+                  >
+                    Show More ({sortedResults.length - visibleCount} remaining)
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+
+
+        {/* Scan summary */}
+        {allData && allData.total > 0 && (
+          <Card className="p-4">
+            <h3 className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wider">Scan Summary</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
+              <div>
+                <div className="text-lg font-semibold tabular-nums">{allData.total}</div>
+                <div className="text-xs text-muted-foreground">Total Trades</div>
+              </div>
+              {(["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const).map(st => (
+                <div key={st}>
+                  <div className="text-lg font-semibold tabular-nums">{allData.results.filter(r => r.strategyType === st).length}</div>
+                  <div className="text-xs text-muted-foreground">{STRATEGY_SHORT[st]}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+      </main>
     </div>
   );
 }
