@@ -30,7 +30,7 @@ const insertScanRecord = db.prepare(`
 const updateScanRecord = db.prepare(`
   UPDATE scan_records
   SET completed_at = ?, scanned_tickers = ?, total_trades = ?,
-      csp_count = ?, pcs_count = ?, strangle_count = ?, ic_count = ?,
+      csp_count = ?, pcs_count = ?, ccs_count = ?, strangle_count = ?, ic_count = ?,
       avg_score = ?, avg_roc = ?, avg_pop = ?,
       duration_ms = ?, status = ?, error = ?
   WHERE id = ?
@@ -92,6 +92,7 @@ function rowToScanRecord(row: any): ScanRecord {
     totalTrades: row.total_trades,
     cspCount: row.csp_count,
     pcsCount: row.pcs_count,
+    ccsCount: row.ccs_count || 0,
     strangleCount: row.strangle_count,
     icCount: row.ic_count,
     avgScore: row.avg_score,
@@ -198,6 +199,7 @@ export const storage = {
   completeScan(scanId: number, results: StrategyTrade[], durationMs: number, error?: string): void {
     const csp = results.filter(r => r.strategyType === "cash_secured_put");
     const pcs = results.filter(r => r.strategyType === "put_credit_spread");
+    const ccs = results.filter(r => r.strategyType === "call_credit_spread");
     const str = results.filter(r => r.strategyType === "strangle");
     const ic = results.filter(r => r.strategyType === "iron_condor");
 
@@ -216,7 +218,7 @@ export const storage = {
       new Date().toISOString(),
       scannedTickers,
       results.length,
-      csp.length, pcs.length, str.length, ic.length,
+      csp.length, pcs.length, ccs.length, str.length, ic.length,
       avgScore, avgROC, avgPOP,
       durationMs,
       error ? "failed" : "complete",

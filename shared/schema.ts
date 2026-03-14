@@ -25,6 +25,7 @@ export type OptionLeg = z.infer<typeof optionLegSchema>;
 export const strategyTypes = [
   "cash_secured_put",
   "put_credit_spread",
+  "call_credit_spread",
   "strangle",
   "iron_condor",
 ] as const;
@@ -36,6 +37,7 @@ export type StrategyType = z.infer<typeof strategyTypeSchema>;
 export const strategyDisplayNames: Record<StrategyType, string> = {
   cash_secured_put: "Cash Secured Put",
   put_credit_spread: "Put Credit Spread",
+  call_credit_spread: "Call Credit Spread",
   strangle: "Strangle",
   iron_condor: "Iron Condor",
 };
@@ -115,6 +117,7 @@ export const scanRecordSchema = z.object({
   totalTrades: z.number(),
   cspCount: z.number(),
   pcsCount: z.number(),
+  ccsCount: z.number(),
   strangleCount: z.number(),
   icCount: z.number(),
   avgScore: z.number(),

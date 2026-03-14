@@ -171,6 +171,11 @@ try {
 } catch (_) {
   // Column already exists — ignore
 }
+try {
+  db.exec(`ALTER TABLE scan_records ADD COLUMN ccs_count INTEGER NOT NULL DEFAULT 0`);
+} catch (_) {
+  // Column already exists — ignore
+}
 
 export default db;
 export { DB_PATH };
