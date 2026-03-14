@@ -540,7 +540,7 @@ export async function registerRoutes(
     try {
       const results = await storage.getAllResults();
       const summary: Record<string, { count: number; avgScore: number; avgROC: number; avgPOP: number }> = {};
-      for (const strat of ["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const) {
+      for (const strat of ["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const) {
         const filtered = results.filter(r => r.strategyType === strat);
         summary[strat] = {
           count: filtered.length,
@@ -956,6 +956,25 @@ export async function registerRoutes(
     if (!Array.isArray(entries)) return res.status(400).json({ error: "entries must be an array" });
     const count = importEarningsData(entries);
     res.json({ ok: true, imported: count });
+  });
+
+  // ── Admin: clear backtest cache by strategy (fixes stale data) ──
+  app.post("/api/admin/clear-backtest-cache", (req: Request, res: Response) => {
+    const { key, strategy } = req.body;
+    if (key !== ADMIN_KEY) return res.status(403).json({ error: "Forbidden" });
+    try {
+      let deleted: number;
+      if (strategy) {
+        const result = db.prepare(`DELETE FROM backtest_cache WHERE cache_key LIKE ?`).run(`%:${strategy}:%`);
+        deleted = result.changes;
+      } else {
+        const result = db.prepare(`DELETE FROM backtest_cache`).run();
+        deleted = result.changes;
+      }
+      res.json({ ok: true, deleted, strategy: strategy || "all" });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to clear cache" });
+    }
   });
 
   return httpServer;
