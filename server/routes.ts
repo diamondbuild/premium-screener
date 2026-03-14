@@ -103,6 +103,16 @@ function computeScore(trade: Partial<StrategyTrade>, opts?: { ivRank?: number | 
   return +(deltaScore + rocScore + probScore + liqScore + ivrBonus + winRateBonus).toFixed(2);
 }
 
+// Recompute scores with IVR + win rate bonuses for enriched trades.
+// Call AFTER enrichTradesWithIVRank so (trade as any).ivRank is set.
+function recomputeScoresWithBonuses(trades: StrategyTrade[]): void {
+  for (const trade of trades) {
+    const ivRank = (trade as any).ivRank ?? null;
+    const winRate = getHistoricalWinRate(trade.underlyingTicker, trade.strategyType);
+    trade.compositeScore = computeScore(trade, { ivRank, winRate });
+  }
+}
+
 function generateDemoData(): StrategyTrade[] {
   const trades: StrategyTrade[] = [];
   let idCounter = 1;
@@ -460,6 +470,8 @@ export async function registerRoutes(
       let picks = await storage.getTopPicks(strategyType as any, excludeEarnings ? topN * 3 : topN);
       picks = enrichTradesWithEarnings(picks);
       picks = enrichTradesWithIVRank(picks);
+      recomputeScoresWithBonuses(picks);
+      picks.sort((a, b) => b.compositeScore - a.compositeScore);
       if (excludeEarnings) {
         picks = picks.filter((t: any) => !t.hasEarningsBeforeExpiry);
         picks = picks.slice(0, topN);
@@ -485,16 +497,10 @@ export async function registerRoutes(
         return res.json({ pick: null, winRate: null, tier: null, reason: null, message: "No scan data available yet.", criteria: { minScore: 75, minIVRank: 0, noEarnings: true, minPOP: 0.65 }, alternates: 0 });
       }
 
-      // Enrich with earnings + IVR
+      // Enrich with earnings + IVR, then recompute scores with bonuses
       results = enrichTradesWithEarnings(results);
       results = enrichTradesWithIVRank(results);
-
-      // Recompute scores with IVR + win rate bonuses
-      for (const trade of results) {
-        const ivRank = (trade as any).ivRank ?? null;
-        const winRate = getHistoricalWinRate(trade.underlyingTicker, trade.strategyType);
-        trade.compositeScore = computeScore(trade, { ivRank, winRate });
-      }
+      recomputeScoresWithBonuses(results);
 
       // Filter out earnings plays
       let eligible = results.filter((t: any) => !t.hasEarningsBeforeExpiry);
@@ -559,6 +565,8 @@ export async function registerRoutes(
       let results = await storage.getAllResults(scanId);
       results = enrichTradesWithEarnings(results);
       results = enrichTradesWithIVRank(results);
+      recomputeScoresWithBonuses(results);
+      results.sort((a, b) => b.compositeScore - a.compositeScore);
       const totalBeforeFilter = results.length;
       if (excludeEarnings) {
         results = results.filter((t: any) => !t.hasEarningsBeforeExpiry);
@@ -616,7 +624,9 @@ export async function registerRoutes(
   // GET /api/strategy-summary
   app.get("/api/strategy-summary", async (_req, res) => {
     try {
-      const results = await storage.getAllResults();
+      let results = await storage.getAllResults();
+      results = enrichTradesWithIVRank(results);
+      recomputeScoresWithBonuses(results);
       const summary: Record<string, { count: number; avgScore: number; avgROC: number; avgPOP: number }> = {};
       for (const strat of ["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const) {
         const filtered = results.filter(r => r.strategyType === strat);
@@ -653,7 +663,10 @@ export async function registerRoutes(
       const record = storage.getScanById(scanId);
       if (!record) return res.status(404).json({ error: "Scan not found" });
 
-      const results = await storage.getAllResults(scanId);
+      let results = await storage.getAllResults(scanId);
+      results = enrichTradesWithIVRank(results);
+      recomputeScoresWithBonuses(results);
+      results.sort((a, b) => b.compositeScore - a.compositeScore);
       res.json({ scan: record, results, total: results.length });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch scan" });
