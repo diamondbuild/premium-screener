@@ -53,6 +53,7 @@ function redactTradeForFree(trade: StrategyTrade): StrategyTrade & { redacted: b
 const STRATEGY_NAMES: Record<string, string> = {
   cash_secured_put: "Cash Secured Put",
   put_credit_spread: "Put Credit Spread",
+  call_credit_spread: "Call Credit Spread",
   strangle: "Strangle",
   iron_condor: "Iron Condor",
 };
@@ -637,7 +638,7 @@ export async function registerRoutes(
     try {
       const results = await storage.getAllResults();
       const summary: Record<string, { count: number; avgScore: number; avgROC: number; avgPOP: number }> = {};
-      for (const strat of ["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const) {
+      for (const strat of ["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const) {
         const filtered = results.filter(r => r.strategyType === strat);
         summary[strat] = {
           count: filtered.length,
@@ -652,453 +653,430 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/earnings
-  app.get("/api/earnings", async (_req, res) => {
+  // GET /api/scan-history — list past scans
+  app.get("/api/scan-history", (_req, res) => {
     try {
-      const earnings = getAllUpcomingEarnings();
-      res.json({ earnings, count: earnings.length });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch earnings" });
-    }
-  });
-
-  // POST /api/backtest
-  app.post("/api/backtest", requireSubscription, async (req, res) => {
-    try {
-      const parsed = backtestRequestSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid backtest request", details: parsed.error.issues });
-      }
-      const btReq = parsed.data;
-      const cacheKey = buildCacheKey(btReq);
-      const cached = getCachedBacktest(cacheKey);
-      if (cached) {
-        return res.json({ result: cached, cached: true });
-      }
-      const result = await runBacktest(btReq);
-      cacheBacktest(cacheKey, result);
-      res.json({ result, cached: false });
-    } catch (err: any) {
-      console.error("Backtest error:", err);
-      res.status(500).json({ error: err?.message || "Backtest failed" });
-    }
-  });
-
-  // GET /api/insights — aggregated backtest win rates for dashboard display
-  app.get("/api/insights", async (_req, res) => {
-    try {
-      const rows = db.prepare(
-        `SELECT cache_key, result_json FROM backtest_cache ORDER BY computed_at DESC`
-      ).all() as { cache_key: string; result_json: string }[];
-
-      // Aggregate win rates by strategy type
-      const byStrategy = new Map<string, { wins: number; losses: number; totalPnL: number; tickers: Set<string> }>();
-
-      for (const row of rows) {
-        try {
-          const result = JSON.parse(row.result_json);
-          const strat = result.strategyType;
-          const ticker = result.ticker;
-          if (!strat || !ticker) continue;
-
-          if (!byStrategy.has(strat)) {
-            byStrategy.set(strat, { wins: 0, losses: 0, totalPnL: 0, tickers: new Set() });
-          }
-          const entry = byStrategy.get(strat)!;
-          entry.wins += result.wins || 0;
-          entry.losses += result.losses || 0;
-          entry.totalPnL += result.totalPnL || 0;
-          entry.tickers.add(ticker);
-        } catch { /* skip malformed */ }
-      }
-
-      const backtest = Array.from(byStrategy.entries()).map(([strategy, data]) => ({
-        strategy,
-        totalTrades: data.wins + data.losses,
-        wins: data.wins,
-        losses: data.losses,
-        winRate: data.wins + data.losses > 0
-          ? +((data.wins / (data.wins + data.losses)) * 100).toFixed(1)
-          : 0,
-        totalPnL: +data.totalPnL.toFixed(2),
-        avgPnLPerTrade: data.wins + data.losses > 0
-          ? +(data.totalPnL / (data.wins + data.losses)).toFixed(2)
-          : 0,
-        tickersBacktested: data.tickers.size,
-      }));
-
-      res.json({ backtest, totalBacktestEntries: rows.length });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch insights" });
-    }
-  });
-
-  // GET /api/scan-history
-  app.get("/api/scan-history", async (_req, res) => {
-    try {
-      const history = storage.getScanHistory(20);
+      const limit = parseInt(_req.query.limit as string) || 30;
+      const history = storage.getScanHistory(limit);
       res.json({ history });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch scan history" });
     }
   });
 
-  // ── Watchlist routes ──
-  app.get("/api/watchlist", requireAuth, async (req, res) => {
+  // GET /api/scan/:id — get a specific scan's details
+  app.get("/api/scan/:id", async (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const watchlist = storage.getWatchlist(userId);
-      res.json({ watchlist });
+      const scanId = parseInt(req.params.id);
+      if (isNaN(scanId)) return res.status(400).json({ error: "Invalid scan ID" });
+
+      const record = storage.getScanById(scanId);
+      if (!record) return res.status(404).json({ error: "Scan not found" });
+
+      const results = await storage.getAllResults(scanId);
+      res.json({ scan: record, results, total: results.length });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch scan" });
+    }
+  });
+
+  // ── Watchlist routes (premium only) ──
+  app.get("/api/watchlist", requireSubscription, (_req, res) => {
+    try {
+      const items = storage.getWatchlist();
+      res.json({ watchlist: items });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch watchlist" });
     }
   });
 
-  app.post("/api/watchlist", requireAuth, async (req, res) => {
+  app.post("/api/watchlist", requireSubscription, (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const parsed = insertWatchlistSchema.safeParse({ ...req.body, userId });
+      const parsed = insertWatchlistSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid watchlist item" });
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      const item = storage.addToWatchlist(parsed.data as InsertWatchlistItem);
-      res.json({ item });
+      const item = storage.addToWatchlist(parsed.data);
+      res.status(201).json(item);
     } catch (err: any) {
-      if (err?.message?.includes("UNIQUE constraint")) {
-        return res.status(409).json({ error: "Already on watchlist" });
+      if (err?.message?.includes("UNIQUE")) {
+        return res.status(409).json({ error: "Ticker already on watchlist" });
       }
       res.status(500).json({ error: "Failed to add to watchlist" });
     }
   });
 
-  app.patch("/api/watchlist/:id", requireAuth, async (req, res) => {
+  app.patch("/api/watchlist/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { scoreThreshold } = req.body;
-      storage.updateWatchlistThreshold(id, scoreThreshold ?? null);
-      res.json({ success: true });
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = storage.updateWatchlistItem(id, req.body);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
     } catch (err) {
-      res.status(500).json({ error: "Failed to update watchlist threshold" });
+      res.status(500).json({ error: "Failed to update watchlist item" });
     }
   });
 
-  app.delete("/api/watchlist/:id", requireAuth, async (req, res) => {
+  app.delete("/api/watchlist/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      storage.removeFromWatchlist(id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const removed = storage.removeFromWatchlist(id);
+      if (!removed) return res.status(404).json({ error: "Not found" });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to remove from watchlist" });
     }
   });
 
-  // ── Alert routes ──
-  app.get("/api/alerts", requireAuth, async (req, res) => {
+  // ── Alert routes (premium only) ──
+  app.get("/api/alerts", requireSubscription, (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const alerts = storage.getAlerts(userId);
-      const unseenCount = alerts.filter((a: any) => !a.seen).length;
+      const unseenOnly = req.query.unseen === "1";
+      const limit = parseInt(req.query.limit as string) || 50;
+      const alerts = storage.getAlerts(limit, unseenOnly);
+      const unseenCount = storage.getUnseenAlertCount();
       res.json({ alerts, unseenCount });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch alerts" });
     }
   });
 
-  app.post("/api/alerts/mark-seen", requireAuth, async (req, res) => {
+  app.post("/api/alerts/mark-seen", requireSubscription, (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      storage.markAlertsSeen(userId);
+      const { alertIds } = req.body;
+      if (!Array.isArray(alertIds)) {
+        return res.status(400).json({ error: "alertIds must be an array" });
+      }
+      storage.markAlertsSeen(alertIds);
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to mark alerts as seen" });
+      res.status(500).json({ error: "Failed to mark alerts seen" });
     }
   });
 
-  app.delete("/api/alerts/:id", requireAuth, async (req, res) => {
+  app.delete("/api/alerts/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      storage.deleteAlert(id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const removed = storage.deleteAlert(id);
+      if (!removed) return res.status(404).json({ error: "Alert not found" });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete alert" });
     }
   });
 
-  // ── Journal routes ──
-  app.get("/api/journal", requireAuth, async (req, res) => {
+  // ── Journal routes (premium only) ──
+  app.get("/api/journal", requireSubscription, (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const entries = storage.getJournalEntries(userId);
+      const status = req.query.status as string | undefined;
+      const ticker = req.query.ticker as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 100;
+      const entries = storage.getJournalEntries(status as any, ticker, limit);
       res.json({ entries });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch journal" });
+      res.status(500).json({ error: "Failed to fetch journal entries" });
     }
   });
 
-  app.get("/api/journal/stats", requireAuth, async (req, res) => {
+  app.post("/api/journal", requireSubscription, (req, res) => {
     try {
-      const userId = (req as any).user?.id;
-      const stats = storage.getJournalStats(userId);
-      res.json(stats);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch journal stats" });
-    }
-  });
-
-  app.get("/api/journal/logged-ids", requireAuth, async (req, res) => {
-    try {
-      const userId = (req as any).user?.id;
-      const ids = storage.getLoggedTradeIds(userId);
-      res.json({ ids });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch logged IDs" });
-    }
-  });
-
-  app.post("/api/journal", requireAuth, async (req, res) => {
-    try {
-      const userId = (req as any).user?.id;
-      const parsed = insertJournalEntrySchema.safeParse({ ...req.body, userId });
+      const parsed = insertJournalEntrySchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid journal entry", details: parsed.error.issues });
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
       const entry = storage.addJournalEntry(parsed.data);
-      res.json({ entry });
-    } catch (err: any) {
+      res.status(201).json(entry);
+    } catch (err) {
       res.status(500).json({ error: "Failed to add journal entry" });
     }
   });
 
-  app.patch("/api/journal/:id/close", requireAuth, async (req, res) => {
+  app.patch("/api/journal/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = storage.updateJournalEntry(id, req.body);
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update journal entry" });
+    }
+  });
+
+  app.post("/api/journal/:id/close", requireSubscription, (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const parsed = closeJournalEntrySchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid close data" });
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      storage.closeJournalEntry(id, parsed.data);
-      res.json({ success: true });
+      const closed = storage.closeJournalEntry(id, parsed.data);
+      if (!closed) return res.status(404).json({ error: "Not found" });
+      res.json(closed);
     } catch (err) {
       res.status(500).json({ error: "Failed to close journal entry" });
     }
   });
 
-  app.delete("/api/journal/:id", requireAuth, async (req, res) => {
+  app.delete("/api/journal/:id", requireSubscription, (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      storage.deleteJournalEntry(id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const removed = storage.deleteJournalEntry(id);
+      if (!removed) return res.status(404).json({ error: "Not found" });
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to delete journal entry" });
     }
   });
 
-  // ── Auth routes ──
-  app.post("/api/auth/register", async (req, res) => {
+  // ── Backtest route ──
+  app.post("/api/backtest", requireSubscription, async (req, res) => {
     try {
-      const { email, password, name } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
+      const parsed = backtestRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
       }
-      const { user, token } = await (await import("./auth")).register(email, password, name);
-      res.json({ user: { id: user.id, email: user.email, name: user.name, subscriptionStatus: user.subscriptionStatus }, token });
+
+      const btReq = parsed.data;
+      const cacheKey = buildCacheKey(btReq);
+
+      // Check cache first
+      const cached = getCachedBacktest(cacheKey);
+      if (cached) {
+        return res.json({ result: cached, cached: true });
+      }
+
+      // Run backtest (async — fetches OHLCV from Polygon then simulates)
+      const result = await runBacktest(btReq);
+      cacheBacktest(cacheKey, result);
+      res.json({ result, cached: false });
     } catch (err: any) {
-      if (err.message?.includes("already exists")) {
-        return res.status(409).json({ error: "Email already registered" });
-      }
-      res.status(500).json({ error: "Registration failed" });
+      console.error("Backtest error:", err?.message);
+      res.status(500).json({ error: err?.message || "Backtest failed" });
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  // GET /api/earnings — upcoming earnings for all tracked tickers
+  app.get("/api/earnings", checkSubscription, (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ error: "Email and password required" });
-      }
-      const { user, token } = await (await import("./auth")).login(email, password);
-      res.json({ user: { id: user.id, email: user.email, name: user.name, subscriptionStatus: user.subscriptionStatus }, token });
-    } catch (err: any) {
-      res.status(401).json({ error: err.message || "Invalid credentials" });
-    }
-  });
-
-  app.get("/api/auth/me", requireAuth, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      res.json({ user: { id: user.id, email: user.email, name: user.name, subscriptionStatus: user.subscriptionStatus } });
+      const days = parseInt(req.query.days as string) || 30;
+      const earnings = getAllUpcomingEarnings(days);
+      res.json({ earnings });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch user" });
+      res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  app.post("/api/auth/logout", (_req, res) => {
-    res.json({ success: true });
-  });
-
-  // ── Stripe webhook (raw body required) ──
-  app.post("/api/stripe/webhook",
-    (req, _res, next) => { (req as any).rawBody = true; next(); },
-    async (req, res) => {
+  // GET /api/earnings/:ticker — next earnings for specific ticker
+  app.get("/api/earnings/:ticker", checkSubscription, (req, res) => {
     try {
-      const sig = req.headers["stripe-signature"] as string;
-      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-      let event;
-
-      if (webhookSecret && sig) {
-        const stripe = new (await import("stripe")).default(process.env.STRIPE_SECRET_KEY || "", { apiVersion: "2024-04-10" });
-        event = stripe.webhooks.constructEvent((req as any).rawBody || req.body, sig, webhookSecret);
-      } else {
-        event = req.body;
-      }
-
-      if (event.type === "checkout.session.completed" || event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
-        const session = event.data.object;
-        const customerEmail = session.customer_email || session.customer_details?.email;
-        if (customerEmail) {
-          storage.upgradeUserSubscription(customerEmail, "active");
-          console.log(`Subscription activated for ${customerEmail}`);
-        }
-      }
-
-      if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.paused") {
-        const subscription = event.data.object;
-        const customerId = subscription.customer;
-        // Would need to look up customer email from Stripe here
-        console.log(`Subscription cancelled/paused for customer ${customerId}`);
-      }
-
-      res.json({ received: true });
-    } catch (err: any) {
-      console.error("Stripe webhook error:", err.message);
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  // POST /api/checkout — create Stripe checkout session
-  app.post("/api/checkout", requireAuth, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const { priceId, successUrl, cancelUrl } = req.body;
-
-      const stripeKey = process.env.STRIPE_SECRET_KEY;
-      if (!stripeKey) {
-        return res.status(503).json({ error: "Payment processing not configured" });
-      }
-
-      const stripe = new (await import("stripe")).default(stripeKey, { apiVersion: "2024-04-10" });
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "subscription",
-        customer_email: user.email,
-        line_items: [{ price: priceId || process.env.STRIPE_PRICE_ID, quantity: 1 }],
-        success_url: successUrl || `${req.headers.origin}/dashboard?upgraded=1`,
-        cancel_url: cancelUrl || `${req.headers.origin}/pricing`,
-        metadata: { userId: String(user.id) },
-      });
-
-      res.json({ url: session.url });
-    } catch (err: any) {
-      console.error("Checkout error:", err);
-      res.status(500).json({ error: err.message || "Failed to create checkout session" });
-    }
-  });
-
-  // GET /api/subscription/status
-  app.get("/api/subscription/status", requireAuth, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      res.json({
-        status: user.subscriptionStatus,
-        isPremium: user.subscriptionStatus === "active" || user.subscriptionStatus === "trialing",
-        email: user.email,
-      });
+      const ticker = req.params.ticker.toUpperCase();
+      const next = getNextEarnings(ticker);
+      res.json({ ticker, next });
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch subscription status" });
+      res.status(500).json({ error: "Failed to fetch earnings" });
     }
   });
 
-  // POST /api/subscription/activate (admin/testing only)
-  app.post("/api/subscription/activate", async (req, res) => {
+  // POST /api/earnings/refresh — manually refresh earnings data (premium)
+  app.post("/api/earnings/refresh", requireSubscription, (req, res) => {
     try {
-      const { email, secret } = req.body;
-      if (secret !== (process.env.ADMIN_SECRET || "ps-admin-2026")) {
-        return res.status(403).json({ error: "Invalid admin secret" });
-      }
-      storage.upgradeUserSubscription(email, "active");
-      res.json({ success: true, message: `Subscription activated for ${email}` });
+      refreshEarningsData();
+      res.json({ message: "Earnings refresh triggered" });
     } catch (err) {
-      res.status(500).json({ error: "Failed to activate subscription" });
+      res.status(500).json({ error: "Failed to refresh earnings" });
     }
   });
 
-  // GET /api/iv-rank/:ticker — get IV rank data for a specific ticker
-  app.get("/api/iv-rank/:ticker", requireSubscription, async (req, res) => {
+  // ── IV Rank routes ──
+  app.get("/api/iv-rank/:ticker", checkSubscription, (req, res) => {
     try {
       const ticker = req.params.ticker.toUpperCase();
       const ivData = getIVRank(ticker);
-      if (!ivData) {
-        return res.status(404).json({ error: "No IV data available for this ticker" });
-      }
-      res.json(ivData);
+      res.json(ivData || { ticker, ivRank: null, ivPercentile: null, message: "No IV data available" });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch IV rank" });
     }
   });
 
-  // GET /api/iv-rank-batch — get IV rank data for multiple tickers
-  app.get("/api/iv-rank-batch", requireSubscription, async (req, res) => {
+  app.post("/api/iv-rank/batch", checkSubscription, (req, res) => {
     try {
-      const tickersParam = req.query.tickers as string;
-      if (!tickersParam) {
-        return res.status(400).json({ error: "tickers query param required" });
+      const { tickers } = req.body;
+      if (!Array.isArray(tickers)) {
+        return res.status(400).json({ error: "tickers must be an array" });
       }
-      const tickers = tickersParam.split(",").map(t => t.trim().toUpperCase());
-      const ivData = getIVRankBatch(tickers);
-      const result: Record<string, any> = {};
-      ivData.forEach((data, ticker) => { result[ticker] = data; });
-      res.json(result);
+      const results = getIVRankBatch(tickers.map((t: string) => t.toUpperCase()));
+      res.json({ results });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch IV rank batch" });
     }
   });
 
-  // POST /api/iv-rank/backfill — trigger IV rank backfill for all tickers
-  app.post("/api/iv-rank/backfill", async (req, res) => {
+  // GET /api/auth/status — check subscription status
+  app.get("/api/auth/status", async (req, res) => {
     try {
-      const { secret } = req.body;
-      if (secret !== (process.env.ADMIN_SECRET || "ps-admin-2026")) {
-        return res.status(403).json({ error: "Invalid admin secret" });
+      const authHeader = req.headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.json({ authenticated: false, isPremium: false });
       }
-      const tickers = getSP500Tickers();
-      res.json({ message: `IV Rank backfill started for ${tickers.length} tickers` });
-      // Run in background
-      backfillTickers(tickers).then(result => {
-        console.log(`IV Rank backfill complete:`, result);
-      }).catch(err => {
-        console.error("IV Rank backfill error:", err);
+      const token = authHeader.slice(7);
+      const { data: { user }, error } = await (await import("./auth")).getSupabaseAdmin().auth.getUser(token);
+      if (error || !user) {
+        return res.json({ authenticated: false, isPremium: false });
+      }
+      const isPremium = await checkSubscription(user.id);
+      return res.json({
+        authenticated: true,
+        isPremium,
+        userId: user.id,
+        email: user.email,
       });
     } catch (err) {
-      res.status(500).json({ error: "Failed to start backfill" });
+      res.status(500).json({ error: "Auth status check failed" });
     }
   });
 
-  // POST /api/ai-insights — AI trade analysis (premium only)
+  // ── Stripe webhook ──
+  app.post("/api/stripe/webhook", async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const sig = req.headers["stripe-signature"] as string;
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!webhookSecret) {
+        console.error("STRIPE_WEBHOOK_SECRET not configured");
+        return res.status(500).json({ error: "Webhook not configured" });
+      }
+
+      let event;
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      } catch (err: any) {
+        console.error("Webhook signature verification failed:", err.message);
+        return res.status(400).json({ error: "Invalid signature" });
+      }
+
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as any;
+          const userId = session.metadata?.userId;
+          const subscriptionId = session.subscription as string;
+          if (userId && subscriptionId) {
+            db.prepare(
+              `INSERT OR REPLACE INTO subscriptions (user_id, stripe_subscription_id, status, updated_at)
+               VALUES (?, ?, 'active', datetime('now'))`
+            ).run(userId, subscriptionId);
+            console.log(`Subscription activated for user ${userId}`);
+          }
+          break;
+        }
+        case "customer.subscription.updated": {
+          const sub = event.data.object as any;
+          const userId = sub.metadata?.userId;
+          if (userId) {
+            db.prepare(
+              `UPDATE subscriptions SET status = ?, updated_at = datetime('now') WHERE user_id = ?`
+            ).run(sub.status, userId);
+          }
+          break;
+        }
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as any;
+          const userId = sub.metadata?.userId;
+          if (userId) {
+            db.prepare(
+              `UPDATE subscriptions SET status = 'canceled', updated_at = datetime('now') WHERE user_id = ?`
+            ).run(userId);
+            console.log(`Subscription canceled for user ${userId}`);
+          }
+          break;
+        }
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error("Webhook error:", err);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // POST /api/stripe/create-checkout
+  app.post("/api/stripe/create-checkout", requireAuth, async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const userId = (req as any).userId;
+      const { priceId, returnUrl } = req.body;
+
+      if (!priceId) {
+        return res.status(400).json({ error: "priceId is required" });
+      }
+
+      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { userId },
+        success_url: `${baseUrl}/dashboard?checkout=success`,
+        cancel_url: `${baseUrl}/pricing?checkout=canceled`,
+      });
+
+      res.json({ url: session.url, sessionId: session.id });
+    } catch (err: any) {
+      console.error("Checkout session creation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to create checkout session" });
+    }
+  });
+
+  // POST /api/stripe/create-portal
+  app.post("/api/stripe/create-portal", requireAuth, async (req, res) => {
+    try {
+      const stripe = (await import("./stripe")).default;
+      const userId = (req as any).userId;
+      const { returnUrl } = req.body;
+
+      // Get customer ID from subscription
+      const sub = db.prepare(
+        `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active'`
+      ).get(userId) as { stripe_subscription_id: string } | undefined;
+
+      if (!sub) {
+        return res.status(404).json({ error: "No active subscription found" });
+      }
+
+      // Get customer ID from Stripe
+      const subscription = await stripe.subscriptions.retrieve(sub.stripe_subscription_id);
+      const customerId = subscription.customer as string;
+
+      const baseUrl = returnUrl || process.env.APP_URL || "http://localhost:5000";
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `${baseUrl}/dashboard`,
+      });
+
+      res.json({ url: portalSession.url });
+    } catch (err: any) {
+      console.error("Portal session creation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to create portal session" });
+    }
+  });
+
+  // ── AI insights endpoint ──
   app.post("/api/ai-insights", requireSubscription, async (req, res) => {
     try {
       const { trade, question } = req.body;
       if (!trade) {
-        return res.status(400).json({ error: "Trade data required" });
-      }
-
-      const openaiKey = process.env.OPENAI_API_KEY;
-      if (!openaiKey) {
-        return res.status(503).json({ error: "AI insights not configured" });
+        return res.status(400).json({ error: "trade is required" });
       }
 
       const OpenAI = (await import("openai")).default;
-      const openai = new OpenAI({ apiKey: openaiKey });
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
       const tradeContext = `
 Strategy: ${trade.strategyType}
