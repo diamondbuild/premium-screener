@@ -736,7 +736,7 @@ export async function registerRoutes(
   });
 
   // ── Backtest routes (premium only) ──
-  app.post("/api/backtest", requireSubscription, (req, res) => {
+  app.post("/api/backtest", requireSubscription, async (req, res) => {
     try {
       const parsed = backtestRequestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -752,8 +752,8 @@ export async function registerRoutes(
         return res.json({ result: cached, cached: true });
       }
 
-      // Run backtest (synchronous — typically takes < 2s for OHLCV fetch + simulation)
-      const result = runBacktest(btReq);
+      // Run backtest (async — fetches OHLCV data from Polygon)
+      const result = await runBacktest(btReq);
       cacheBacktest(cacheKey, result);
       res.json({ result, cached: false });
     } catch (err: any) {
