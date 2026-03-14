@@ -85,7 +85,7 @@ function MockDashboardHero() {
             {[
               { label: "Avg ROC", value: "226%", color: "text-emerald-400" },
               { label: "Avg POP", value: "81%", color: "text-emerald-400" },
-              { label: "Avg Δ Z-Score", value: "1.3σ", color: "text-emerald-400" },
+              { label: "Avg \u0394 Z-Score", value: "1.3\u03c3", color: "text-emerald-400" },
               { label: "Trades Today", value: "47", color: "text-white" },
             ].map((kpi) => (
               <div key={kpi.label} className="rounded-lg bg-zinc-800/60 border border-zinc-700/40 p-2.5">
@@ -98,6 +98,7 @@ function MockDashboardHero() {
             {[
               { name: "CSP", count: 12, color: "bg-blue-500" },
               { name: "PCS", count: 18, color: "bg-emerald-500" },
+              { name: "CCS", count: 7, color: "bg-rose-500" },
               { name: "Strangle", count: 9, color: "bg-purple-500" },
               { name: "IC", count: 8, color: "bg-amber-500" },
             ].map((s) => (
@@ -110,9 +111,9 @@ function MockDashboardHero() {
           </div>
           <div className="space-y-1.5">
             {[
-              { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8σ", credit: "$2.45" },
-              { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5σ", credit: "$4.10" },
-              { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2σ", credit: "$1.80" },
+              { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8\u03c3", credit: "$2.45" },
+              { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5\u03c3", credit: "$4.10" },
+              { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2\u03c3", credit: "$1.80" },
             ].map((t) => (
               <div key={t.ticker} className="flex items-center justify-between rounded-lg bg-zinc-800/40 border border-zinc-700/30 p-2.5">
                 <div className="flex items-center gap-3">
@@ -123,7 +124,7 @@ function MockDashboardHero() {
                   <div className="hidden sm:flex items-center gap-3 ml-2">
                     <span className="text-[10px] text-zinc-500">ROC <span className="text-emerald-400 font-medium">{t.roc}</span></span>
                     <span className="text-[10px] text-zinc-500">POP <span className="text-zinc-300 font-medium">{t.pop}</span></span>
-                    <span className="text-[10px] text-zinc-500">ΔZ <span className="text-zinc-300 font-medium">{t.dz}</span></span>
+                    <span className="text-[10px] text-zinc-500">\u0394Z <span className="text-zinc-300 font-medium">{t.dz}</span></span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -161,7 +162,7 @@ function MockDashboardFull() {
           {[
             { label: "Avg Annualized ROC", value: "226%", icon: TrendingUp, color: "text-emerald-400" },
             { label: "Avg Probability of Profit", value: "81%", icon: Target, color: "text-emerald-400" },
-            { label: "Avg Delta Z-Score", value: "1.3σ", icon: Activity, color: "text-emerald-400" },
+            { label: "Avg Delta Z-Score", value: "1.3\u03c3", icon: Activity, color: "text-emerald-400" },
             { label: "S&P 500 + NASDAQ 100 Tickers", value: "500+", icon: BarChart3, color: "text-white" },
           ].map((kpi) => (
             <div key={kpi.label} className="rounded-lg bg-zinc-800/60 border border-zinc-700/40 p-3">
@@ -173,10 +174,11 @@ function MockDashboardFull() {
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             { name: "Cash Secured Puts", short: "CSP", count: 12, winRate: "76%", color: "bg-blue-500" },
             { name: "Put Credit Spreads", short: "PCS", count: 18, winRate: "82%", color: "bg-emerald-500" },
+            { name: "Call Credit Spreads", short: "CCS", count: 7, winRate: "74%", color: "bg-rose-500" },
             { name: "Strangles", short: "Strangle", count: 9, winRate: "71%", color: "bg-purple-500" },
             { name: "Iron Condors", short: "IC", count: 8, winRate: "91%", color: "bg-amber-500" },
           ].map((s) => (
@@ -192,11 +194,11 @@ function MockDashboardFull() {
         </div>
         <div className="space-y-1.5">
           {[
-            { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8σ", credit: "$2.45", iv: 72 },
-            { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5σ", credit: "$4.10", iv: 65 },
-            { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2σ", credit: "$1.80", iv: 58 },
-            { ticker: "AMZN", score: 83, strategy: "PCS", stratColor: "bg-emerald-500", roc: "186%", pop: "82%", dz: "1.1σ", credit: "$3.20", iv: 54 },
-            { ticker: "META", score: 81, strategy: "Strangle", stratColor: "bg-purple-500", roc: "274%", pop: "73%", dz: "1.4σ", credit: "$5.60", iv: 61 },
+            { ticker: "NEM", score: 92, strategy: "PCS", stratColor: "bg-emerald-500", roc: "312%", pop: "86%", dz: "1.8\u03c3", credit: "$2.45", iv: 72 },
+            { ticker: "TSLA", score: 88, strategy: "IC", stratColor: "bg-amber-500", roc: "248%", pop: "79%", dz: "1.5\u03c3", credit: "$4.10", iv: 65 },
+            { ticker: "DOW", score: 85, strategy: "CSP", stratColor: "bg-blue-500", roc: "194%", pop: "84%", dz: "1.2\u03c3", credit: "$1.80", iv: 58 },
+            { ticker: "AMZN", score: 83, strategy: "PCS", stratColor: "bg-emerald-500", roc: "186%", pop: "82%", dz: "1.1\u03c3", credit: "$3.20", iv: 54 },
+            { ticker: "META", score: 81, strategy: "Strangle", stratColor: "bg-purple-500", roc: "274%", pop: "73%", dz: "1.4\u03c3", credit: "$5.60", iv: 61 },
           ].map((t) => (
             <div key={t.ticker} className="flex items-center justify-between rounded-lg bg-zinc-800/40 border border-zinc-700/30 px-3 py-2.5">
               <div className="flex items-center gap-3">
@@ -205,7 +207,7 @@ function MockDashboardFull() {
                 <div className="hidden md:flex items-center gap-4 ml-1">
                   <span className="text-[10px] text-zinc-500">ROC <span className="text-emerald-400 font-medium">{t.roc}</span></span>
                   <span className="text-[10px] text-zinc-500">POP <span className="text-zinc-300 font-medium">{t.pop}</span></span>
-                  <span className="text-[10px] text-zinc-500">ΔZ <span className="text-zinc-300 font-medium">{t.dz}</span></span>
+                  <span className="text-[10px] text-zinc-500">\u0394Z <span className="text-zinc-300 font-medium">{t.dz}</span></span>
                   <span className="text-[10px] text-zinc-500">IV Rank <span className="text-zinc-300 font-medium">{t.iv}</span></span>
                 </div>
               </div>
@@ -271,8 +273,8 @@ export default function LandingPage() {
   ];
 
   const faqs = [
-    { q: "What strategies does it cover?", a: "Cash Secured Puts (CSPs), Put Credit Spreads (PCS), Call Credit Spreads (CCS), Strangles, and Iron Condors — five core premium-selling strategies covering both bullish and bearish credit plays." },
-    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (30%), Annualized ROC (20%), Probability of Profit (20%), and Liquidity (10%), plus bonus points for high IV Rank (+10 when IVR ≥ 50) and strong historical win rate (+10 when backtest ≥ 60%)." },
+    { q: "What strategies does it cover?", a: "Cash Secured Puts (CSPs), Put Credit Spreads (PCS), Call Credit Spreads (CCS), Strangles, and Iron Condors \u2014 five core premium-selling strategies covering both bullish and bearish credit plays." },
+    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (30%), Annualized ROC (20%), Probability of Profit (20%), and Liquidity (10%), plus bonus points for high IV Rank (+10 when IVR \u2265 50) and strong historical win rate (+10 when backtest \u2265 60%)." },
     { q: "How often is data updated?", a: "Every trading day. Scans run during market hours so you get fresh ranked trade ideas by market open." },
     { q: "Can I try it for free?", a: "Yes. Create a free account to see limited results with some details redacted. Upgrade anytime to unlock everything." },
     { q: "What's your refund policy?", a: "Cancel anytime, no questions asked. You keep access through the end of your billing period." },
@@ -311,7 +313,7 @@ export default function LandingPage() {
               <Link href="/auth"><Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 px-8 w-full sm:w-auto" data-testid="button-hero-cta">Start Free Preview <ArrowRight className="w-4 h-4 ml-1" /></Button></Link>
               <Button size="lg" variant="outline" className="text-zinc-300 border-zinc-700 hover:bg-zinc-800 w-full sm:w-auto" onClick={() => scrollTo("how-it-works")} data-testid="button-hero-how">See How It Works</Button>
             </div>
-            <p className={`text-xs text-zinc-500 ${fadeIn}`} style={{ animationDelay: "500ms" }}>No credit card required · Free preview available · Cancel anytime</p>
+            <p className={`text-xs text-zinc-500 ${fadeIn}`} style={{ animationDelay: "500ms" }}>No credit card required \u00b7 Free preview available \u00b7 Cancel anytime</p>
           </div>
           <div className={`w-full max-w-4xl mx-auto ${fadeInUp}`} style={{ animationDelay: "400ms" }}><MockDashboardHero /></div>
         </div>
@@ -320,7 +322,7 @@ export default function LandingPage() {
 
       <section className="relative py-20 md:py-28 px-4">
         <div className="max-w-3xl mx-auto text-center">
-          <AnimatedSection><p className="text-xl md:text-2xl font-medium text-zinc-200 leading-relaxed mb-4">Most traders waste hours scanning chains manually. Premium levels are often mispriced — but only briefly.</p></AnimatedSection>
+          <AnimatedSection><p className="text-xl md:text-2xl font-medium text-zinc-200 leading-relaxed mb-4">Most traders waste hours scanning chains manually. Premium levels are often mispriced \u2014 but only briefly.</p></AnimatedSection>
           <AnimatedSection delay={150}><p className="text-lg md:text-xl text-zinc-500 leading-relaxed">By the time you find it, the edge is gone.</p></AnimatedSection>
         </div>
       </section>
@@ -330,7 +332,7 @@ export default function LandingPage() {
           <AnimatedSection><div className="text-center mb-14"><h2 className="text-2xl md:text-3xl font-bold text-white mb-3">How It Works</h2><p className="text-zinc-400 text-sm md:text-base">Three steps. Zero manual chain scanning.</p></div></AnimatedSection>
           <div className="grid md:grid-cols-3 gap-6 md:gap-8">
             {[
-              { step: "01", icon: Crosshair, title: "We Scan", desc: "Every trading day, our engine analyzes options chains across the S&P 500 + NASDAQ 100 — every expiry, every strike." },
+              { step: "01", icon: Crosshair, title: "We Scan", desc: "Every trading day, our engine analyzes options chains across the S&P 500 + NASDAQ 100 \u2014 every expiry, every strike." },
               { step: "02", icon: BarChart3, title: "We Score", desc: "Each trade is ranked by a composite of Delta Z-Score, Annualized ROC, Probability of Profit, and Liquidity." },
               { step: "03", icon: Target, title: "You Trade", desc: "Get ranked trade ideas with full leg details, P&L diagrams, and backtesting. Enter with confidence." },
             ].map((s, i) => (
@@ -445,7 +447,7 @@ export default function LandingPage() {
             <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-up">Sign Up</span></Link>
             <button onClick={() => scrollTo("pricing")} className="hover:text-zinc-300 transition-colors" data-testid="link-footer-pricing">Pricing</button>
           </div>
-          <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>© 2026 Premium Screener. Not financial advice.</span></div>
+          <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>\u00a9 2026 Premium Screener. Not financial advice.</span></div>
         </div>
       </footer>
 
