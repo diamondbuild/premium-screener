@@ -64,6 +64,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   all: "All Strategies",
   cash_secured_put: "Cash Secured Puts",
   put_credit_spread: "Put Credit Spreads",
+  call_credit_spread: "Call Credit Spreads",
   strangle: "Strangles",
   iron_condor: "Iron Condors",
 };
@@ -71,6 +72,7 @@ const STRATEGY_LABELS: Record<string, string> = {
 const STRATEGY_SHORT: Record<string, string> = {
   cash_secured_put: "CSP",
   put_credit_spread: "PCS",
+  call_credit_spread: "CCS",
   strangle: "Strangle",
   iron_condor: "IC",
 };
@@ -78,6 +80,7 @@ const STRATEGY_SHORT: Record<string, string> = {
 const STRATEGY_COLORS: Record<string, string> = {
   cash_secured_put: "bg-chart-1 text-white",
   put_credit_spread: "bg-chart-2 text-white",
+  call_credit_spread: "bg-rose-500 text-white",
   strangle: "bg-chart-3 text-white",
   iron_condor: "bg-chart-4 text-white dark:text-black",
 };
@@ -1852,8 +1855,8 @@ export default function Dashboard() {
 
         {/* Strategy Summary Cards */}
         {summaryData && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {(["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const).map(st => {
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            {(["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const).map(st => {
               const s = summaryData[st];
               if (!s) return null;
               const isActive = strategy === st;
@@ -1892,6 +1895,9 @@ export default function Dashboard() {
               </TabsTrigger>
               <TabsTrigger value="put_credit_spread" data-testid="tab-pcs" className="text-xs">
                 <Layers className="w-3 h-3 mr-1" />PCS
+              </TabsTrigger>
+              <TabsTrigger value="call_credit_spread" data-testid="tab-ccs" className="text-xs">
+                <TrendingUp className="w-3 h-3 mr-1" />CCS
               </TabsTrigger>
               <TabsTrigger value="strangle" data-testid="tab-str" className="text-xs">
                 <ArrowDownUp className="w-3 h-3 mr-1" />Strangle
@@ -2074,12 +2080,12 @@ export default function Dashboard() {
         {allData && allData.total > 0 && (
           <Card className="p-4">
             <h3 className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wider">Scan Summary</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 text-center">
               <div>
                 <div className="text-lg font-semibold tabular-nums">{allData.total}</div>
                 <div className="text-xs text-muted-foreground">Total Trades</div>
               </div>
-              {(["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const).map(st => (
+              {(["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const).map(st => (
                 <div key={st}>
                   <div className="text-lg font-semibold tabular-nums">{allData.results.filter(r => r.strategyType === st).length}</div>
                   <div className="text-xs text-muted-foreground">{STRATEGY_SHORT[st]}</div>
