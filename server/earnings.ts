@@ -134,12 +134,12 @@ async function fetchEarningsCalendar(
 // ── Main: refresh earnings data ──
 // Fetches earnings calendar for the next 75 days (covers max DTE of 60 + buffer)
 // Caches in SQLite with 12hr TTL to avoid redundant API calls
-export async function refreshEarningsData(): Promise<number> {
+export async function refreshEarningsData(force = false): Promise<number> {
   const now = new Date();
   const meta = getMeta.get() as any;
 
-  // Check if cache is fresh (12hr TTL)
-  if (meta?.last_fetched) {
+  // Check if cache is fresh (12hr TTL) — skip if force=true
+  if (!force && meta?.last_fetched) {
     const lastFetched = new Date(meta.last_fetched);
     const hoursSince = (now.getTime() - lastFetched.getTime()) / (1000 * 60 * 60);
     if (hoursSince < 12) {

@@ -686,12 +686,13 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/earnings/refresh", async (_req, res) => {
+  app.post("/api/earnings/refresh", async (req, res) => {
     try {
-      const count = await refreshEarningsData();
-      res.json({ success: true, entriesCached: count });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to refresh earnings" });
+      const force = req.query.force === "1" || req.body?.force === true;
+      const count = await refreshEarningsData(force);
+      res.json({ success: true, entriesCached: count, forced: force });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to refresh earnings", detail: err?.message });
     }
   });
 
