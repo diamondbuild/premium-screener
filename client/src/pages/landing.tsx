@@ -322,7 +322,7 @@ export default function LandingPage() {
 
       <section className="relative py-20 md:py-28 px-4">
         <div className="max-w-3xl mx-auto text-center">
-          <AnimatedSection><p className="text-xl md:text-2xl font-medium text-zinc-200 leading-relaxed mb-4">Most traders waste hours scanning chains manually. Premium levels are often mispriced \u2014 but only briefly.</p></AnimatedSection>
+          <AnimatedSection><p className="text-xl md:text-2xl font-medium text-zinc-200 leading-relaxed mb-4">Most traders waste hours scanning chains manually. Premium levels are often mispriced — but only briefly.</p></AnimatedSection>
           <AnimatedSection delay={150}><p className="text-lg md:text-xl text-zinc-500 leading-relaxed">By the time you find it, the edge is gone.</p></AnimatedSection>
         </div>
       </section>
@@ -332,7 +332,7 @@ export default function LandingPage() {
           <AnimatedSection><div className="text-center mb-14"><h2 className="text-2xl md:text-3xl font-bold text-white mb-3">How It Works</h2><p className="text-zinc-400 text-sm md:text-base">Three steps. Zero manual chain scanning.</p></div></AnimatedSection>
           <div className="grid md:grid-cols-3 gap-6 md:gap-8">
             {[
-              { step: "01", icon: Crosshair, title: "We Scan", desc: "Every trading day, our engine analyzes options chains across the S&P 500 + NASDAQ 100 \u2014 every expiry, every strike." },
+              { step: "01", icon: Crosshair, title: "We Scan", desc: "Every trading day, our engine analyzes options chains across the S&P 500 + NASDAQ 100 — every expiry, every strike." },
               { step: "02", icon: BarChart3, title: "We Score", desc: "Each trade is ranked by a composite of Delta Z-Score, Annualized ROC, Probability of Profit, and Liquidity." },
               { step: "03", icon: Target, title: "You Trade", desc: "Get ranked trade ideas with full leg details, P&L diagrams, and backtesting. Enter with confidence." },
             ].map((s, i) => (
@@ -447,7 +447,7 @@ export default function LandingPage() {
             <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-up">Sign Up</span></Link>
             <button onClick={() => scrollTo("pricing")} className="hover:text-zinc-300 transition-colors" data-testid="link-footer-pricing">Pricing</button>
           </div>
-          <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>\u00a9 2026 Premium Screener. Not financial advice.</span></div>
+          <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>© 2026 Premium Screener. Not financial advice.</span></div>
         </div>
       </footer>
 
