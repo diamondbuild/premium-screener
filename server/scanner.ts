@@ -2,7 +2,8 @@ import type { StrategyTrade, OptionLeg } from "@shared/schema";
 import { storage } from "./storage";
 import { execFileSync, execFile } from "child_process";
 import { promisify } from "util";
-import { storeAtmIV } from "./iv-rank";
+import { storeAtmIV, getIVRank } from "./iv-rank";
+import { getHistoricalWinRate } from "./backtester";
 import https from "https";
 
 const execFileAsync = promisify(execFile);
@@ -360,12 +361,34 @@ function makeLegFromPolygon(opt: PolygonOption, action: "sell" | "buy"): OptionL
   };
 }
 
-function computeScore(trade: Partial<StrategyTrade>): number {
-  const deltaScore = Math.min(Math.abs(trade.deltaZScore || 0) / 3, 1) * 35;
-  const rocScore = Math.min((trade.annualizedROC || 0) / 120, 1) * 25;
-  const probScore = (trade.probabilityOfProfit || 0) * 25;
-  const liqScore = Math.min((trade.totalVolume || 0) / ((trade.minOpenInterest || 1) * 3), 1) * 15;
-  return +(deltaScore + rocScore + probScore + liqScore).toFixed(2);
+function computeScore(trade: Partial<StrategyTrade>, ivRankVal?: number | null, historicalWinRate?: number | null): number {
+  // Base score (max 100)
+  const deltaScore = Math.min(Math.abs(trade.deltaZScore || 0) / 3, 1) * 30;
+  const rocScore = Math.min((trade.annualizedROC || 0) / 120, 1) * 20;
+  const probScore = (trade.probabilityOfProfit || 0) * 20;
+  const liqScore = Math.min((trade.totalVolume || 0) / ((trade.minOpenInterest || 1) * 3), 1) * 10;
+
+  // IV Rank bonus (max +10): premium sellers want high IV rank (>50 = rich premium)
+  // Scale: IVR 30=0, IVR 50=+5, IVR 80+=+10
+  let ivRankBonus = 0;
+  if (ivRankVal != null && ivRankVal > 30) {
+    ivRankBonus = Math.min((ivRankVal - 30) / 50, 1) * 10;
+  }
+
+  // Historical win rate bonus (max +10): reward tickers with proven backtest performance
+  // Scale: 70% WR=0, 80%=+5, 90%+=+10
+  let winRateBonus = 0;
+  if (historicalWinRate != null && historicalWinRate > 0.70) {
+    winRateBonus = Math.min((historicalWinRate - 0.70) / 0.20, 1) * 10;
+  }
+
+  // Penalty: IVR below 20 = premium is cheap, not ideal for selling
+  let ivPenalty = 0;
+  if (ivRankVal != null && ivRankVal < 20) {
+    ivPenalty = (20 - ivRankVal) / 20 * 5; // Up to -5 for very low IVR
+  }
+
+  return +Math.max(0, deltaScore + rocScore + probScore + liqScore + ivRankBonus + winRateBonus - ivPenalty).toFixed(2);
 }
 
 function computeZScores(opts: PolygonOption[]): Map<string, number> {
@@ -826,6 +849,35 @@ export async function runFullScan(
         progress: Math.round((scannedCount / tickers.length) * 100),
       });
     }, CONCURRENCY);
+
+    // ── Post-scan scoring enrichment ──
+    // Re-score all trades with IV Rank + historical win rate data
+    const uniqueTickers = [...new Set(allResults.map(t => t.underlyingTicker))];
+    const ivRankMap = new Map<string, number>();
+    const winRateMap = new Map<string, number>();
+
+    for (const ticker of uniqueTickers) {
+      const ivData = getIVRank(ticker);
+      if (ivData?.ivRank != null) ivRankMap.set(ticker, ivData.ivRank);
+
+      // Look up cached backtest win rates per strategy type
+      for (const strat of ["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const) {
+        const wr = getHistoricalWinRate(ticker, strat);
+        if (wr != null) winRateMap.set(`${ticker}:${strat}`, wr);
+      }
+    }
+
+    // Re-compute scores with IV rank + win rate bonuses
+    let enrichedCount = 0;
+    for (const trade of allResults) {
+      const ivr = ivRankMap.get(trade.underlyingTicker) ?? null;
+      const wr = winRateMap.get(`${trade.underlyingTicker}:${trade.strategyType}`) ?? null;
+      if (ivr != null || wr != null) {
+        trade.compositeScore = computeScore(trade, ivr, wr);
+        enrichedCount++;
+      }
+    }
+    console.log(`Score enrichment: ${ivRankMap.size} tickers with IV rank, ${winRateMap.size} ticker:strategy combos with win rate data, ${enrichedCount} trades re-scored`);
 
     allResults.sort((a, b) => b.compositeScore - a.compositeScore);
     await storage.saveResults(allResults, scanId);
