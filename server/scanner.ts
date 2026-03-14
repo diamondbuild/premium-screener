@@ -514,6 +514,55 @@ function buildPutCreditSpread(
   return trade;
 }
 
+function buildCallCreditSpread(
+  sellOpt: PolygonOption, buyOpt: PolygonOption, zScore: number, minOI: number, minPOP: number
+): StrategyTrade | null {
+  const sellLeg = makeLegFromPolygon(sellOpt, "sell");
+  const buyLeg = makeLegFromPolygon(buyOpt, "buy");
+  if (!sellLeg || !buyLeg) return null;
+  if (sellLeg.openInterest < minOI || buyLeg.openInterest < minOI) return null;
+  const pop = 1 - Math.abs(sellLeg.delta);
+  if (pop < minPOP) return null;
+  // For CCS: sell lower strike call, buy higher strike call
+  const width = buyLeg.strikePrice - sellLeg.strikePrice;
+  if (width <= 0) return null;
+  const dte = getDTE(sellLeg.expirationDate);
+  const netCredit = +(sellLeg.midpoint - buyLeg.midpoint).toFixed(2);
+  if (netCredit <= 0.05) return null;
+  const maxLoss = (width - netCredit) * 100;
+  const annROC = maxLoss > 0 ? (netCredit * 100 / maxLoss) * (365 / dte) * 100 : 0;
+
+  const trade: StrategyTrade = {
+    id: `ccs-${++idCounter}`,
+    strategyType: "call_credit_spread",
+    underlyingTicker: sellOpt.underlying_asset?.ticker || "",
+    underlyingPrice: sellOpt.underlying_asset?.price || 0,
+    legs: [sellLeg, buyLeg],
+    expirationDate: sellLeg.expirationDate,
+    daysToExpiration: dte,
+    netCredit,
+    maxProfit: netCredit * 100,
+    maxLoss: -maxLoss,
+    breakEvenLow: null,
+    breakEvenHigh: +(sellLeg.strikePrice + netCredit).toFixed(2),
+    riskRewardRatio: maxLoss > 0 ? +((netCredit * 100) / maxLoss).toFixed(3) : 0,
+    probabilityOfProfit: +pop.toFixed(3),
+    netDelta: +(sellLeg.delta - buyLeg.delta).toFixed(4),
+    netTheta: +(sellLeg.theta + buyLeg.theta).toFixed(4),
+    netVega: +(-(sellLeg.vega) + buyLeg.vega).toFixed(4),
+    avgIV: sellLeg.impliedVolatility,
+    deltaZScore: +zScore.toFixed(2),
+    annualizedROC: +annROC.toFixed(1),
+    premiumPerDay: +(netCredit * 100 / dte).toFixed(2),
+    compositeScore: 0,
+    minOpenInterest: Math.min(sellLeg.openInterest, buyLeg.openInterest),
+    totalVolume: sellLeg.volume + buyLeg.volume,
+    spreadWidth: width,
+  };
+  trade.compositeScore = computeScore(trade);
+  return trade;
+}
+
 function buildStrangle(
   putOpt: PolygonOption, callOpt: PolygonOption,
   putZScore: number, callZScore: number,
@@ -781,6 +830,31 @@ async function scanTicker(
       if (trade) results.push(trade);
     }
 
+    // ── 5. Call Credit Spreads ──
+    for (const [, expCalls] of callsByExp) {
+      const sorted = expCalls
+        .filter(c => { const d = Math.abs(c.greeks!.delta!); return d >= 0.08 && d <= 0.30; })
+        .sort((a, b) => a.details!.strike_price! - b.details!.strike_price!); // ascending by strike
+
+      for (let i = 0; i < sorted.length; i++) {
+        const sellOpt = sorted[i];
+        const sellStrike = sellOpt.details!.strike_price!;
+        const price = sellOpt.underlying_asset?.price || 0;
+        const minWidth = Math.max(5, Math.round(price * 0.01));
+        const maxWidth = Math.max(25, Math.round(price * 0.05));
+
+        for (let j = i + 1; j < sorted.length; j++) {
+          const buyOpt = sorted[j];
+          const width = buyOpt.details!.strike_price! - sellStrike;
+          if (width < minWidth) continue;
+          if (width > maxWidth) break;
+          const z = callZScores.get(sellOpt.details!.ticker!) || 0;
+          const trade = buildCallCreditSpread(sellOpt, buyOpt, z, minOI, minPOP);
+          if (trade) { results.push(trade); break; }
+        }
+      }
+    }
+
   } catch (err) {
     console.error(`Error scanning ${ticker}:`, err);
   }
@@ -861,7 +935,7 @@ export async function runFullScan(
       if (ivData?.ivRank != null) ivRankMap.set(ticker, ivData.ivRank);
 
       // Look up cached backtest win rates per strategy type
-      for (const strat of ["cash_secured_put", "put_credit_spread", "strangle", "iron_condor"] as const) {
+      for (const strat of ["cash_secured_put", "put_credit_spread", "call_credit_spread", "strangle", "iron_condor"] as const) {
         const wr = getHistoricalWinRate(ticker, strat);
         if (wr != null) winRateMap.set(`${ticker}:${strat}`, wr);
       }
@@ -899,10 +973,11 @@ export async function runFullScan(
   const byType = {
     csp: allResults.filter(t => t.strategyType === "cash_secured_put").length,
     pcs: allResults.filter(t => t.strategyType === "put_credit_spread").length,
+    ccs: allResults.filter(t => t.strategyType === "call_credit_spread").length,
     str: allResults.filter(t => t.strategyType === "strangle").length,
     ic: allResults.filter(t => t.strategyType === "iron_condor").length,
   };
-  console.log(`Scan #${scanId} complete in ${(durationMs / 1000).toFixed(1)}s: ${allResults.length} trades (CSP: ${byType.csp}, PCS: ${byType.pcs}, Strangle: ${byType.str}, IC: ${byType.ic})`);
+  console.log(`Scan #${scanId} complete in ${(durationMs / 1000).toFixed(1)}s: ${allResults.length} trades (CSP: ${byType.csp}, PCS: ${byType.pcs}, CCS: ${byType.ccs}, Strangle: ${byType.str}, IC: ${byType.ic})`);
 
   // Check alert triggers
   try {
