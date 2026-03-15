@@ -641,8 +641,8 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   // Expected move from IV
   const soldLegs = legs.filter(l => l.action === "sell");
   const avgIV = soldLegs.length > 0
-    ? soldLegs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / soldLegs.length
-    : legs.reduce((sum, l) => sum + Number(l.impliedVolatility), 0) / legs.length;
+    ? soldLegs.reduce((sum, l) => sum + (Number(l.impliedVolatility) || 0), 0) / soldLegs.length
+    : legs.reduce((sum, l) => sum + (Number(l.impliedVolatility) || 0), 0) / legs.length;
   const dte = daysUntil(entry.expirationDate);
   const em = price != null ? price * avgIV * Math.sqrt(Math.max(dte, 1) / 365) : 0;
   const emLo = price != null ? price - em : 0;
@@ -787,19 +787,26 @@ function computePositionGreeks(entry: JournalEntry) {
   const legs = entry.legs ?? [];
   if (legs.length === 0) return null;
 
+  let hasGreeks = false;
   for (const leg of legs) {
     const mult = leg.action === "sell" ? -1 : 1;
-    delta += leg.delta * mult;
-    theta += leg.theta * mult;
-    gamma += leg.gamma * mult;
-    vega += leg.vega * mult;
+    const d = Number(leg.delta) || 0;
+    const t = Number(leg.theta) || 0;
+    const g = Number(leg.gamma) || 0;
+    const v = Number(leg.vega) || 0;
+    if (d !== 0 || t !== 0 || g !== 0 || v !== 0) hasGreeks = true;
+    delta += d * mult;
+    theta += t * mult;
+    gamma += g * mult;
+    vega += v * mult;
   }
+  if (!hasGreeks) return null;
 
   // POP estimate: for credit spreads, use the short leg delta
   const sellLegs = legs.filter(l => l.action === "sell");
   if (sellLegs.length > 0) {
     // POP ≈ 1 - |delta of short leg| (for puts), sum for multi-leg
-    const totalShortDelta = sellLegs.reduce((s, l) => s + Math.abs(l.delta), 0);
+    const totalShortDelta = sellLegs.reduce((s, l) => s + Math.abs(Number(l.delta) || 0), 0);
     pop = (1 - totalShortDelta / sellLegs.length) * 100;
   }
 
@@ -920,11 +927,11 @@ function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: Journal
       )}
 
       {/* Leg details */}
-      {entry.legs?.length > 0 && (
+      {(entry.legs ?? []).length > 0 && (
         <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
-          {entry.legs.map((leg, i) => (
+          {(entry.legs ?? []).map((leg, i) => (
             <span key={i} className={leg.action === "sell" ? "text-emerald-400/80" : "text-red-400/80"}>
-              {leg.action === "sell" ? "S" : "B"} {leg.strikePrice} {leg.contractType.charAt(0).toUpperCase()} @ {fmt$(leg.midpoint)}
+              {leg.action === "sell" ? "S" : "B"} {leg.strikePrice} {leg.contractType?.charAt(0).toUpperCase() ?? "?"} @ {fmt$(Number(leg.midpoint) || 0)}
             </span>
           ))}
           <span>Exp {entry.expirationDate}</span>
@@ -1016,7 +1023,8 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
                 {entry.legs.map((leg, i) => (
                   <span key={i} className={leg.action === "sell" ? "text-emerald-400/80" : "text-red-400/80"}>
-                    {leg.action === "sell" ? "Sell" : "Buy"} {leg.strikePrice} {leg.contractType.charAt(0).toUpperCase()} @ {fmt$(leg.midpoint)} (Δ{leg.delta.toFixed(2)} Θ{leg.theta.toFixed(3)})
+                    {leg.action === "sell" ? "Sell" : "Buy"} {leg.strikePrice} {leg.contractType?.charAt(0).toUpperCase() ?? "?"} @ {fmt$(Number(leg.midpoint) || 0)}
+                    {(leg.delta != null || leg.theta != null) && ` (Δ${(Number(leg.delta) || 0).toFixed(2)} Θ${(Number(leg.theta) || 0).toFixed(3)})`}
                   </span>
                 ))}
               </div>
