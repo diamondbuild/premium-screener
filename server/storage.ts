@@ -535,22 +535,71 @@ export const storage = {
     const open = this.getJournalEntries('open');
     const positions = open.map(e => {
       let delta = 0, theta = 0, gamma = 0, vega = 0;
-      for (const leg of e.legs) {
+      const legs = e.legs ?? [];
+      let hasGreeks = false;
+
+      for (const leg of legs) {
         const mult = leg.action === 'sell' ? -1 : 1;
-        delta += leg.delta * mult * e.contracts * 100;
-        theta += leg.theta * mult * e.contracts * 100;
-        gamma += leg.gamma * mult * e.contracts * 100;
-        vega += leg.vega * mult * e.contracts * 100;
+        const d = Number(leg.delta) || 0;
+        const t = Number(leg.theta) || 0;
+        const g = Number(leg.gamma) || 0;
+        const v = Number(leg.vega) || 0;
+        if (d !== 0 || t !== 0 || g !== 0 || v !== 0) hasGreeks = true;
+        delta += d * mult * e.contracts * 100;
+        theta += t * mult * e.contracts * 100;
+        gamma += g * mult * e.contracts * 100;
+        vega += v * mult * e.contracts * 100;
       }
+
       const expDate = new Date(e.expirationDate);
       const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / 86400000));
 
-      // Compute POP from short leg deltas
-      const sellLegs = e.legs.filter(l => l.action === 'sell');
+      // If no legs or all greeks are zero, estimate from position parameters
+      if (!hasGreeks && e.entryCredit > 0 && Math.abs(e.maxLoss) > 0) {
+        const spreadW = e.spreadWidth ?? (Math.abs(e.maxLoss) + e.entryCredit);
+        // Estimate short put delta from credit/spread ratio (credit spreads)
+        const creditRatio = e.entryCredit / spreadW;
+        // For credit spreads, short delta ≈ -(credit/spread + 0.15..0.35)
+        // POP ≈ 1 - |short delta|, and typically POP ~ 60-75% for well-selected PCS
+        const estShortDelta = -(creditRatio + 0.20);
+        const estLongDelta = estShortDelta * 0.5; // long leg is further OTM
+
+        if (e.strategyType === 'cash_secured_put') {
+          // CSP: single sold put
+          delta = +(estShortDelta * -1 * e.contracts * 100).toFixed(2); // sell -> negate
+          theta = +(e.entryCredit / Math.max(dte, 1) * e.contracts * 100).toFixed(2);
+          gamma = +(-0.01 * e.contracts * 100).toFixed(4);
+          vega = +(-0.05 * e.contracts * 100).toFixed(2);
+        } else if (e.strategyType === 'put_credit_spread' || e.strategyType === 'call_credit_spread') {
+          // Credit spread: net delta = sold - bought
+          const netDelta = (estShortDelta * -1) + (estLongDelta * 1); // sell negate + buy keep
+          delta = +(netDelta * e.contracts * 100).toFixed(2);
+          theta = +(e.entryCredit / Math.max(dte, 1) * e.contracts * 100).toFixed(2);
+          gamma = +(-0.005 * e.contracts * 100).toFixed(4);
+          vega = +(-0.03 * e.contracts * 100).toFixed(2);
+        } else {
+          // Iron condor / strangle: roughly delta neutral
+          delta = 0;
+          theta = +(e.entryCredit / Math.max(dte, 1) * e.contracts * 100).toFixed(2);
+          gamma = +(-0.008 * e.contracts * 100).toFixed(4);
+          vega = +(-0.04 * e.contracts * 100).toFixed(2);
+        }
+      }
+
+      // Compute POP from short leg deltas, or estimate if no legs
+      const sellLegs = legs.filter(l => l.action === 'sell');
       let pop = 0;
       if (sellLegs.length > 0) {
-        const avgShortDelta = sellLegs.reduce((s, l) => s + Math.abs(l.delta), 0) / sellLegs.length;
-        pop = (1 - avgShortDelta) * 100;
+        const avgShortDelta = sellLegs.reduce((s, l) => s + Math.abs(Number(l.delta) || 0), 0) / sellLegs.length;
+        if (avgShortDelta > 0) {
+          pop = (1 - avgShortDelta) * 100;
+        }
+      }
+      // Estimate POP when legs are missing or have no delta
+      if (pop === 0 && e.entryCredit > 0 && Math.abs(e.maxLoss) > 0) {
+        const spreadW = e.spreadWidth ?? (Math.abs(e.maxLoss) + e.entryCredit);
+        // POP ≈ 1 - (credit / spread_width) for credit spreads
+        pop = (1 - e.entryCredit / spreadW) * 100;
       }
 
       return {

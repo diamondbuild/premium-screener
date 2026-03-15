@@ -785,7 +785,6 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
 function computePositionGreeks(entry: JournalEntry) {
   let delta = 0, theta = 0, gamma = 0, vega = 0, pop = 0;
   const legs = entry.legs ?? [];
-  if (legs.length === 0) return null;
 
   let hasGreeks = false;
   for (const leg of legs) {
@@ -800,14 +799,49 @@ function computePositionGreeks(entry: JournalEntry) {
     gamma += g * mult;
     vega += v * mult;
   }
+
+  // Estimate greeks when legs are empty or all greeks are zero
+  if (!hasGreeks && entry.entryCredit > 0 && Math.abs(entry.maxLoss) > 0) {
+    const expDate = new Date(entry.expirationDate);
+    const dte = Math.max(1, Math.ceil((expDate.getTime() - Date.now()) / 86400000));
+    const spreadW = entry.spreadWidth ?? (Math.abs(entry.maxLoss) + entry.entryCredit);
+    const creditRatio = entry.entryCredit / spreadW;
+    const estShortDelta = -(creditRatio + 0.20);
+    const estLongDelta = estShortDelta * 0.5;
+
+    if (entry.strategyType === "cash_secured_put") {
+      delta = estShortDelta * -1;
+      theta = entry.entryCredit / dte;
+      gamma = -0.01;
+      vega = -0.05;
+    } else if (entry.strategyType === "put_credit_spread" || entry.strategyType === "call_credit_spread") {
+      delta = (estShortDelta * -1) + (estLongDelta * 1);
+      theta = entry.entryCredit / dte;
+      gamma = -0.005;
+      vega = -0.03;
+    } else {
+      delta = 0;
+      theta = entry.entryCredit / dte;
+      gamma = -0.008;
+      vega = -0.04;
+    }
+    hasGreeks = true;
+  }
+
   if (!hasGreeks) return null;
 
   // POP estimate: for credit spreads, use the short leg delta
   const sellLegs = legs.filter(l => l.action === "sell");
   if (sellLegs.length > 0) {
-    // POP ≈ 1 - |delta of short leg| (for puts), sum for multi-leg
     const totalShortDelta = sellLegs.reduce((s, l) => s + Math.abs(Number(l.delta) || 0), 0);
-    pop = (1 - totalShortDelta / sellLegs.length) * 100;
+    if (totalShortDelta > 0) {
+      pop = (1 - totalShortDelta / sellLegs.length) * 100;
+    }
+  }
+  // Estimate POP when legs are missing or have no delta
+  if (pop === 0 && entry.entryCredit > 0 && Math.abs(entry.maxLoss) > 0) {
+    const spreadW = entry.spreadWidth ?? (Math.abs(entry.maxLoss) + entry.entryCredit);
+    pop = (1 - entry.entryCredit / spreadW) * 100;
   }
 
   return {
