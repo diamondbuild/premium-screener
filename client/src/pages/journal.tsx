@@ -999,8 +999,8 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
             <div><span className="text-muted-foreground">Contracts:</span> {entry.contracts}</div>
             <div><span className="text-muted-foreground">P&L/Contract:</span> <span className={isWin ? "text-profit" : "text-loss"}>{fmtPnL(entry.pnlPerContract ?? 0)}</span></div>
             {entry.underlyingPriceAtEntry != null && <div><span className="text-muted-foreground">Entry Price:</span> {fmt$(entry.underlyingPriceAtEntry)}</div>}
-            {entry.underlyingPriceAtExit && <div><span className="text-muted-foreground">Exit Price:</span> {fmt$(entry.underlyingPriceAtExit)}</div>}
-            {entry.compositeScoreAtEntry && <div><span className="text-muted-foreground">Score:</span> {entry.compositeScoreAtEntry.toFixed(1)}</div>}
+            {entry.underlyingPriceAtExit != null && <div><span className="text-muted-foreground">Exit Price:</span> {fmt$(entry.underlyingPriceAtExit)}</div>}
+            {entry.compositeScoreAtEntry != null && <div><span className="text-muted-foreground">Score:</span> {entry.compositeScoreAtEntry.toFixed(1)}</div>}
             {entry.ivRankAtEntry != null && <div><span className="text-muted-foreground">IVR:</span> {Math.round(entry.ivRankAtEntry)}%</div>}
           </div>
           {/* Greeks snapshot at entry */}
@@ -1069,16 +1069,20 @@ export default function JournalPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  const statusParam = statusFilter !== "all" ? `?status=${statusFilter}` : "";
-  const { data: journalData, isLoading } = useQuery<{ entries: JournalEntry[]; total: number }>({
-    queryKey: ["/api/journal", statusParam],
+  const journalUrl = statusFilter !== "all" ? `/api/journal?status=${statusFilter}` : "/api/journal";
+  const { data: journalData, isLoading, isError: journalError } = useQuery<{ entries: JournalEntry[]; total: number }>({
+    queryKey: ["/api/journal", statusFilter],
+    queryFn: async () => {
+      const res = await apiRequest("GET", journalUrl);
+      return res.json();
+    },
   });
 
-  const { data: stats } = useQuery<JournalStats>({
+  const { data: stats, isError: statsError } = useQuery<JournalStats>({
     queryKey: ["/api/journal/stats"],
   });
 
-  const { data: greeksData } = useQuery<PortfolioGreeks>({
+  const { data: greeksData, isError: greeksError } = useQuery<PortfolioGreeks>({
     queryKey: ["/api/journal/greeks"],
   });
 
@@ -1207,7 +1211,11 @@ export default function JournalPage() {
             </Tabs>
           </div>
 
-          {isLoading ? (
+          {journalError ? (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              Failed to load journal entries. Please refresh the page.
+            </Card>
+          ) : isLoading ? (
             <Card className="p-8 text-center text-sm text-muted-foreground">Loading journal...</Card>
           ) : entries.length === 0 ? (
             <Card className="p-8 text-center" data-testid="empty-state">
