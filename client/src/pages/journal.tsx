@@ -9,6 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -758,7 +762,7 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
 }
 
 // ── Open Position Card ──
-function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onClose: (e: JournalEntry) => void; onEdit: (e: JournalEntry) => void }) {
+function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: JournalEntry; onClose: (e: JournalEntry) => void; onEdit: (e: JournalEntry) => void; onDelete: (id: number) => void }) {
   const [showPayoff, setShowPayoff] = useState(false);
   const dte = daysUntil(entry.expirationDate);
   const Icon = STRATEGY_ICONS[entry.strategyType] || TrendingDown;
@@ -794,6 +798,10 @@ function OpenPositionCard({ entry, onClose, onEdit }: { entry: JournalEntry; onC
           <Button size="sm" variant="outline" onClick={() => onClose(entry)}
             className="text-xs" data-testid={`button-close-${entry.id}`}>
             Close
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(entry.id)}
+            className="text-xs text-destructive hover:text-destructive" data-testid={`button-delete-open-${entry.id}`}>
+            <Trash2 className="w-3 h-3" />
           </Button>
         </div>
       </div>
@@ -916,6 +924,7 @@ export default function JournalPage() {
   const [closingEntry, setClosingEntry] = useState<JournalEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<JournalEntry | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const statusParam = statusFilter !== "all" ? `?status=${statusFilter}` : "";
   const { data: journalData, isLoading } = useQuery<{ entries: JournalEntry[]; total: number }>({
@@ -937,7 +946,10 @@ export default function JournalPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/journal"] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/greeks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/logged-ids"] });
       toast({ title: "Deleted", description: "Trade removed from journal" });
+      setDeleteConfirmId(null);
     },
   });
 
@@ -1029,7 +1041,7 @@ export default function JournalPage() {
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {openEntries.map(e => (
-                <OpenPositionCard key={e.id} entry={e} onClose={setClosingEntry} onEdit={setEditingEntry} />
+                <OpenPositionCard key={e.id} entry={e} onClose={setClosingEntry} onEdit={setEditingEntry} onDelete={setDeleteConfirmId} />
               ))}
             </div>
           </div>
@@ -1097,10 +1109,13 @@ export default function JournalPage() {
                         onClick={() => setEditingEntry(e)}><Edit3 className="w-3 h-3 mr-1" />Edit</Button>
                       <Button size="sm" variant="outline" className="text-xs h-6"
                         onClick={() => setClosingEntry(e)}>Close</Button>
+                      <Button size="sm" variant="ghost" className="text-xs h-6 text-destructive hover:text-destructive"
+                        onClick={() => setDeleteConfirmId(e.id)} data-testid={`button-delete-hist-${e.id}`}>
+                        <Trash2 className="w-3 h-3" /></Button>
                     </div>
                   </div>
                 ) : (
-                  <ClosedTradeRow key={e.id} entry={e} onDelete={(id) => deleteMutation.mutate(id)} onEdit={setEditingEntry} />
+                  <ClosedTradeRow key={e.id} entry={e} onDelete={setDeleteConfirmId} onEdit={setEditingEntry} />
                 )
               ))}
             </Card>
@@ -1112,6 +1127,27 @@ export default function JournalPage() {
       <CloseDialog entry={closingEntry} open={!!closingEntry} onClose={() => setClosingEntry(null)} />
       <EditEntryDialog entry={editingEntry} open={!!editingEntry} onClose={() => setEditingEntry(null)} />
       <AddTradeDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Trade</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this trade? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteConfirmId !== null) deleteMutation.mutate(deleteConfirmId); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
