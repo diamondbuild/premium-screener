@@ -488,6 +488,32 @@ export function buildCacheKey(req: BacktestRequest): string {
   return `${req.ticker}:${req.strategyType}:${req.strikePrice}:${req.strikePrice2 || ""}:${req.strikePrice3 || ""}:${req.strikePrice4 || ""}:${req.daysToExpiration}:${req.lookbackMonths || 6}`;
 }
 
+// ── Backtest quality check for pick-of-day ──
+// Returns true if ANY cached backtest period for this ticker+strategy has negative avg returns.
+// Returns false (passes) if no backtest data exists or all periods have positive avg returns.
+export function hasNegativeBacktestReturns(ticker: string, strategyType: string): boolean {
+  try {
+    const rows = db.prepare(
+      `SELECT result_json FROM backtest_cache WHERE cache_key LIKE ?`
+    ).all(`${ticker}:${strategyType}:%`) as { result_json: string }[];
+
+    if (rows.length === 0) return false; // No data — don't penalize
+
+    for (const row of rows) {
+      try {
+        const result = JSON.parse(row.result_json) as BacktestResult;
+        if (result.totalTrades > 0 && result.avgPnL < 0) {
+          return true; // Found a period with negative average returns
+        }
+      } catch { /* skip malformed */ }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // ── Historical win rate lookup (from cached backtests) ──
 // Returns the best (most recent, most trades) win rate for a ticker + strategy combo
 export function getHistoricalWinRate(ticker: string, strategyType: string): number | null {

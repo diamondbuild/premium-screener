@@ -5,7 +5,7 @@ import db from "./db";
 import { FAVICON_32_B64, FAVICON_180_B64, FAVICON_192_B64, FAVICON_512_B64 } from "./asset-favicons";
 import { OG_IMAGE_B64 } from "./asset-og";
 import { runFullScan, getSP500Tickers } from "./scanner";
-import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey, getHistoricalWinRate } from "./backtester";
+import { runBacktest, getCachedBacktest, cacheBacktest, buildCacheKey, getHistoricalWinRate, hasNegativeBacktestReturns } from "./backtester";
 import { refreshEarningsData, enrichTradesWithEarnings, getAllUpcomingEarnings, getNextEarnings, importEarningsData } from "./earnings";
 import { getIVRank, getIVRankBatch, enrichTradesWithIVRank, backfillTickers, getTickersWithIVData } from "./iv-rank";
 import { requireAuth, requireSubscription, checkSubscription, getUserByEmail, updateUserSubscription } from "./auth";
@@ -494,7 +494,7 @@ export async function registerRoutes(
       // Get all current scan results
       let results = await storage.getAllResults();
       if (results.length === 0) {
-        return res.json({ pick: null, winRate: null, tier: null, reason: null, message: "No scan data available yet.", criteria: { minScore: 75, minIVRank: 0, noEarnings: true, minPOP: 0.65 }, alternates: 0 });
+        return res.json({ pick: null, winRate: null, tier: null, reason: null, message: "No scan data available yet.", criteria: { minScore: 75, minIVRank: 0, noEarnings: true, minPOP: 0.65, positiveBacktest: true }, alternates: 0 });
       }
 
       // Enrich with earnings + IVR, then recompute scores with bonuses
@@ -508,13 +508,24 @@ export async function registerRoutes(
       // Sort by composite score descending
       eligible.sort((a, b) => b.compositeScore - a.compositeScore);
 
+      // Backtest quality gate: find the first trade without negative backtest returns
+      // Trades with no backtest data are allowed through (don't penalize missing data)
+      function findBestWithBacktestGate(candidates: typeof eligible): typeof eligible[0] | null {
+        for (const trade of candidates) {
+          if (!hasNegativeBacktestReturns(trade.underlyingTicker, trade.strategyType)) {
+            return trade;
+          }
+        }
+        return null;
+      }
+
       // A+ threshold: score >= 75
       const A_PLUS_THRESHOLD = 75;
       const aPlusTrades = eligible.filter(t => t.compositeScore >= A_PLUS_THRESHOLD);
 
       if (aPlusTrades.length === 0) {
-        // Return best available even if not A+
-        const best = eligible[0] || null;
+        // Return best available even if not A+, applying backtest gate
+        const best = findBestWithBacktestGate(eligible) || eligible[0] || null;
         const winRate = best ? getHistoricalWinRate(best.underlyingTicker, best.strategyType) : null;
         return res.json({
           pick: best,
@@ -522,13 +533,14 @@ export async function registerRoutes(
           tier: best ? (best.compositeScore >= 70 ? "A" : best.compositeScore >= 60 ? "B+" : "B") : null,
           reason: best ? `Strongest setup today — ${best.underlyingTicker} ${best.strategyType.replace(/_/g, " ")} with ${(best.probabilityOfProfit * 100).toFixed(0)}% POP and ${best.annualizedROC.toFixed(0)}% annualized ROC.` : null,
           message: best ? "No A+ setups today — showing best available." : "No eligible trades found.",
-          criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65 },
+          criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65, positiveBacktest: true },
           alternates: 0,
         });
       }
 
-      // Pick the absolute best (single strongest play)
-      const pick = aPlusTrades[0];
+      // Pick the best A+ trade that passes the backtest quality gate
+      // Fall back to the top A+ trade if none pass (all have negative backtests)
+      const pick = findBestWithBacktestGate(aPlusTrades) || aPlusTrades[0];
       const winRate = getHistoricalWinRate(pick.underlyingTicker, pick.strategyType);
       const ivr = (pick as any).ivRank;
 
@@ -547,7 +559,7 @@ export async function registerRoutes(
         tier: "A+",
         reason,
         message: null,
-        criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65 },
+        criteria: { minScore: A_PLUS_THRESHOLD, minIVRank: 0, noEarnings: true, minPOP: 0.65, positiveBacktest: true },
         alternates: aPlusTrades.length - 1,
       });
     } catch (err) {
