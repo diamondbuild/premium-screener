@@ -21,6 +21,7 @@ import {
   Star,
   Clock,
 } from "lucide-react";
+import { Disclaimer } from "@/components/Disclaimer";
 
 /* ───────────────────────── animations ───────────────────────── */
 const fadeInUp = "animate-[fadeInUp_0.7s_ease-out_both]";
@@ -449,6 +450,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>© 2026 Premium Screener. Not financial advice.</span></div>
         </div>
+        <Disclaimer />
       </footer>
 
       <style>{`

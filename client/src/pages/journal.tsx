@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip } from "recharts";
 import { Link } from "wouter";
+import { Disclaimer } from "@/components/Disclaimer";
 import type { JournalEntry, JournalStats, StrategyType } from "@shared/schema";
 
 // ── Constants ──
@@ -1307,6 +1308,7 @@ export default function JournalPage() {
           )}
         </div>
       </main>
+      <Disclaimer />
 
       {/* Dialogs */}
       <CloseDialog entry={closingEntry} open={!!closingEntry} onClose={() => setClosingEntry(null)} />

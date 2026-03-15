@@ -56,6 +56,7 @@ import { UpgradeBanner, RedactedValue, UserMenu } from "@/components/UpgradeBann
 import { Label } from "@/components/ui/label";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, Tooltip as RechartsTooltip } from "recharts";
 import { Crosshair, BarChart2, PieChart, Award, Flame } from "lucide-react";
+import { Disclaimer } from "@/components/Disclaimer";
 
 type FilterType = "all" | StrategyType;
 type SortField = "compositeScore" | "annualizedROC" | "deltaZScore" | "probabilityOfProfit" | "premiumPerDay" | "netCredit" | "ivRank";
@@ -2138,6 +2139,7 @@ export default function Dashboard() {
         )}
 
       </main>
+      <Disclaimer />
     </div>
   );
 }
