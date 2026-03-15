@@ -275,10 +275,6 @@ export function serveBotLanding(req: Request, res: Response, next: NextFunction)
   const isLandingRoute = req.path === "/" || req.path === "/index.html";
   if (!isLandingRoute) return next();
 
-  // Only intercept if the accept header suggests HTML (not API/asset requests)
-  const accept = req.headers.accept || "";
-  if (!accept.includes("text/html")) return next();
-
   const ua = req.headers["user-agent"] || "";
   if (isBot(ua)) {
     res.set("Content-Type", "text/html; charset=utf-8");
