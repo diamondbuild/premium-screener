@@ -69,7 +69,8 @@ interface PortfolioGreeks {
   totalTheta: number;
   totalGamma: number;
   totalVega: number;
-  positions: { ticker: string; strategyType: string; contracts: number; delta: number; theta: number; gamma: number; vega: number; daysToExpiration: number }[];
+  avgPOP: number;
+  positions: { ticker: string; strategyType: string; contracts: number; delta: number; theta: number; gamma: number; vega: number; daysToExpiration: number; pop: number; entryCredit: number; maxLoss: number; ivRankAtEntry: number | null; compositeScore: number | null }[];
   bySector: Record<string, { delta: number; theta: number; count: number }>;
 }
 
@@ -96,7 +97,7 @@ function PortfolioGreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
       </div>
 
       {/* Aggregate Greeks Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
         <div className="bg-muted/50 rounded-lg p-2.5 text-center">
           <div className="text-xs text-muted-foreground mb-0.5">Net Delta (Δ)</div>
           <div className={`text-base font-bold tabular-nums ${deltaDir === "bullish" ? "text-profit" : deltaDir === "bearish" ? "text-loss" : ""}`}>
@@ -124,6 +125,13 @@ function PortfolioGreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
             {greeks.totalVega > 0 ? "+" : ""}{fmt$(greeks.totalVega)}
           </div>
           <div className="text-[10px] text-muted-foreground">{greeks.totalVega < 0 ? "short vol" : "long vol"}</div>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-2.5 text-center">
+          <div className="text-xs text-muted-foreground mb-0.5">Avg POP</div>
+          <div className={`text-base font-bold tabular-nums ${greeks.avgPOP >= 60 ? "text-profit" : greeks.avgPOP >= 45 ? "" : "text-loss"}`}>
+            {greeks.avgPOP.toFixed(0)}%
+          </div>
+          <div className="text-[10px] text-muted-foreground">weighted avg</div>
         </div>
       </div>
 
@@ -154,16 +162,19 @@ function PortfolioGreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
       {/* Position-level greeks table */}
       <div className="mt-3">
         <div className="text-xs font-medium text-muted-foreground mb-1.5">Position Details</div>
-        <div className="max-h-48 overflow-y-auto rounded border border-border">
+        <div className="max-h-48 overflow-y-auto overflow-x-auto rounded border border-border">
           <table className="w-full text-xs">
             <thead className="bg-muted/50 sticky top-0">
               <tr>
                 <th className="text-left py-1.5 px-2 font-medium">Ticker</th>
                 <th className="text-center py-1.5 px-2 font-medium">Strategy</th>
                 <th className="text-right py-1.5 px-2 font-medium">Qty</th>
+                <th className="text-right py-1.5 px-2 font-medium">POP</th>
                 <th className="text-right py-1.5 px-2 font-medium">Delta</th>
                 <th className="text-right py-1.5 px-2 font-medium">Theta</th>
+                <th className="text-right py-1.5 px-2 font-medium">Gamma</th>
                 <th className="text-right py-1.5 px-2 font-medium">Vega</th>
+                <th className="text-right py-1.5 px-2 font-medium">IVR</th>
                 <th className="text-right py-1.5 px-2 font-medium">DTE</th>
               </tr>
             </thead>
@@ -177,6 +188,9 @@ function PortfolioGreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
                     </Badge>
                   </td>
                   <td className="py-1 px-2 text-right tabular-nums">{p.contracts}</td>
+                  <td className={`py-1 px-2 text-right tabular-nums ${p.pop >= 60 ? "text-profit" : p.pop >= 45 ? "" : "text-loss"}`}>
+                    {p.pop > 0 ? `${p.pop.toFixed(0)}%` : "—"}
+                  </td>
                   <td className={`py-1 px-2 text-right tabular-nums ${p.delta >= 0 ? "text-profit" : "text-loss"}`}>
                     {p.delta > 0 ? "+" : ""}{p.delta.toFixed(1)}
                   </td>
@@ -184,7 +198,13 @@ function PortfolioGreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
                     {p.theta > 0 ? "+" : ""}{fmt$(p.theta)}
                   </td>
                   <td className="py-1 px-2 text-right tabular-nums">
+                    {p.gamma.toFixed(2)}
+                  </td>
+                  <td className="py-1 px-2 text-right tabular-nums">
                     {p.vega > 0 ? "+" : ""}{fmt$(p.vega)}
+                  </td>
+                  <td className="py-1 px-2 text-right tabular-nums text-muted-foreground">
+                    {p.ivRankAtEntry != null ? `${Math.round(p.ivRankAtEntry)}%` : "—"}
                   </td>
                   <td className={`py-1 px-2 text-right tabular-nums ${p.daysToExpiration <= 7 ? "text-loss font-medium" : ""}`}>
                     {p.daysToExpiration}d
@@ -761,11 +781,61 @@ function JournalPayoffDiagram({ entry }: { entry: JournalEntry }) {
   );
 }
 
+// ── Compute position-level greeks from legs ──
+function computePositionGreeks(entry: JournalEntry) {
+  let delta = 0, theta = 0, gamma = 0, vega = 0, pop = 0;
+  const legs = entry.legs ?? [];
+  if (legs.length === 0) return null;
+
+  for (const leg of legs) {
+    const mult = leg.action === "sell" ? -1 : 1;
+    delta += leg.delta * mult;
+    theta += leg.theta * mult;
+    gamma += leg.gamma * mult;
+    vega += leg.vega * mult;
+  }
+
+  // POP estimate: for credit spreads, use the short leg delta
+  const sellLegs = legs.filter(l => l.action === "sell");
+  if (sellLegs.length > 0) {
+    // POP ≈ 1 - |delta of short leg| (for puts), sum for multi-leg
+    const totalShortDelta = sellLegs.reduce((s, l) => s + Math.abs(l.delta), 0);
+    pop = (1 - totalShortDelta / sellLegs.length) * 100;
+  }
+
+  return {
+    delta: +delta.toFixed(4),
+    theta: +theta.toFixed(4),
+    gamma: +gamma.toFixed(6),
+    vega: +vega.toFixed(4),
+    pop: +pop.toFixed(1),
+  };
+}
+
+// ── Greeks stat badge ──
+function GreekBadge({ label, value, suffix, positive, className }: {
+  label: string; value: string; suffix?: string; positive?: boolean | null; className?: string;
+}) {
+  const colorClass = positive === true ? "text-emerald-400" : positive === false ? "text-red-400" : "text-foreground";
+  return (
+    <div className={`rounded-md bg-muted/60 px-2 py-1 text-center min-w-[60px] ${className ?? ""}`}>
+      <div className="text-[10px] text-muted-foreground leading-tight">{label}</div>
+      <div className={`text-xs font-semibold tabular-nums leading-tight ${colorClass}`}>
+        {value}{suffix && <span className="text-[10px] text-muted-foreground font-normal">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ── Open Position Card ──
 function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: JournalEntry; onClose: (e: JournalEntry) => void; onEdit: (e: JournalEntry) => void; onDelete: (id: number) => void }) {
   const [showPayoff, setShowPayoff] = useState(false);
   const dte = daysUntil(entry.expirationDate);
   const Icon = STRATEGY_ICONS[entry.strategyType] || TrendingDown;
+  const greeks = computePositionGreeks(entry);
+  const maxProfit = entry.entryCredit * 100;
+  const maxLossAbs = Math.abs(entry.maxLoss) * 100;
+  const isSeller = (entry.legs ?? []).some(l => l.action === "sell");
 
   return (
     <div style={showPayoff ? { gridColumn: '1 / -1' } : undefined}>
@@ -776,14 +846,9 @@ function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: Journal
           <Badge className={`text-xs ${STRATEGY_COLORS[entry.strategyType]}`}>
             <Icon className="w-3 h-3 mr-1" />{STRATEGY_SHORT[entry.strategyType]}
           </Badge>
-          <Badge variant="outline" className={STATUS_COLORS.open}>
+          <Badge variant="outline" className={`${STATUS_COLORS.open} ${dte <= 7 ? "!border-orange-500/50 !text-orange-400" : ""}`}>
             <Clock className="w-3 h-3 mr-1" />{dte}d left
           </Badge>
-          {entry.ivRankAtEntry != null && (
-            <Badge variant="outline" className="text-xs border-border text-muted-foreground gap-1">
-              <Activity className="w-3 h-3" />IVR {Math.round(entry.ivRankAtEntry)}
-            </Badge>
-          )}
         </div>
         <div className="flex gap-1.5 shrink-0">
           <Button size="sm" variant={showPayoff ? "secondary" : "ghost"}
@@ -806,7 +871,8 @@ function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: Journal
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 text-xs">
+      {/* Core trade info */}
+      <div className="grid grid-cols-4 gap-2 text-xs mb-2">
         <div>
           <div className="text-muted-foreground">Credit</div>
           <div className="font-medium tabular-nums">{fmt$(entry.entryCredit)}</div>
@@ -816,14 +882,54 @@ function OpenPositionCard({ entry, onClose, onEdit, onDelete }: { entry: Journal
           <div className="font-medium tabular-nums">{entry.contracts}</div>
         </div>
         <div>
-          <div className="text-muted-foreground">Max Loss</div>
-          <div className="font-medium tabular-nums text-loss">{entry.maxLoss === -999999 ? "Undef." : fmt$(Math.abs(entry.maxLoss))}</div>
+          <div className="text-muted-foreground">Max Profit</div>
+          <div className="font-medium tabular-nums text-emerald-400">{fmt$(maxProfit)}</div>
         </div>
         <div>
-          <div className="text-muted-foreground">Exp</div>
-          <div className="font-medium tabular-nums">{entry.expirationDate}</div>
+          <div className="text-muted-foreground">Max Loss</div>
+          <div className="font-medium tabular-nums text-red-400">{entry.maxLoss === -999999 ? "Undef." : fmt$(maxLossAbs)}</div>
         </div>
       </div>
+
+      {/* Greeks & key metrics badges */}
+      {greeks && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {greeks.pop > 0 && (
+            <GreekBadge label="POP" value={`${greeks.pop.toFixed(0)}%`}
+              positive={greeks.pop >= 60} />
+          )}
+          <GreekBadge label="Delta (Δ)" value={greeks.delta.toFixed(2)}
+            positive={null} />
+          <GreekBadge label="Theta (Θ)" value={`$${(greeks.theta * entry.contracts * 100).toFixed(0)}`} suffix="/day"
+            positive={isSeller ? greeks.theta < 0 : greeks.theta > 0} />
+          <GreekBadge label="Gamma (Γ)" value={greeks.gamma.toFixed(4)}
+            positive={null} />
+          <GreekBadge label="Vega (ν)" value={greeks.vega.toFixed(2)}
+            positive={null} />
+          {entry.ivRankAtEntry != null && (
+            <GreekBadge label="IVR Entry" value={`${Math.round(entry.ivRankAtEntry)}%`}
+              positive={entry.ivRankAtEntry >= 30} />
+          )}
+          <GreekBadge label="DTE" value={`${dte}`} suffix="d"
+            positive={dte > 14 ? true : dte > 7 ? null : false} />
+          {entry.compositeScoreAtEntry != null && (
+            <GreekBadge label="Score" value={entry.compositeScoreAtEntry.toFixed(1)}
+              positive={entry.compositeScoreAtEntry >= 70} />
+          )}
+        </div>
+      )}
+
+      {/* Leg details */}
+      {entry.legs?.length > 0 && (
+        <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+          {entry.legs.map((leg, i) => (
+            <span key={i} className={leg.action === "sell" ? "text-emerald-400/80" : "text-red-400/80"}>
+              {leg.action === "sell" ? "S" : "B"} {leg.strikePrice} {leg.contractType.charAt(0).toUpperCase()} @ {fmt$(leg.midpoint)}
+            </span>
+          ))}
+          <span>Exp {entry.expirationDate}</span>
+        </div>
+      )}
 
       {showPayoff && entry.legs?.length > 0 && (
         <JournalPayoffDiagram entry={entry} />
@@ -876,7 +982,9 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
         </div>
       </div>
 
-      {expanded && (
+      {expanded && (() => {
+        const greeks = computePositionGreeks(entry);
+        return (
         <div className="px-3 py-2 bg-accent/20 rounded-b text-xs space-y-1.5 mb-1">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div><span className="text-muted-foreground">Entry Credit:</span> {fmt$(entry.entryCredit)}</div>
@@ -888,6 +996,32 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
             {entry.compositeScoreAtEntry && <div><span className="text-muted-foreground">Score:</span> {entry.compositeScoreAtEntry.toFixed(1)}</div>}
             {entry.ivRankAtEntry != null && <div><span className="text-muted-foreground">IVR:</span> {Math.round(entry.ivRankAtEntry)}%</div>}
           </div>
+          {/* Greeks snapshot at entry */}
+          {greeks && (
+            <div className="border-t border-border pt-1.5">
+              <div className="text-[10px] text-muted-foreground mb-1 font-medium">Greeks at Entry</div>
+              <div className="flex flex-wrap gap-1.5">
+                {greeks.pop > 0 && <GreekBadge label="POP" value={`${greeks.pop.toFixed(0)}%`} positive={greeks.pop >= 60} />}
+                <GreekBadge label="Delta" value={greeks.delta.toFixed(2)} positive={null} />
+                <GreekBadge label="Theta" value={`$${(greeks.theta * entry.contracts * 100).toFixed(0)}`} suffix="/day" positive={null} />
+                <GreekBadge label="Gamma" value={greeks.gamma.toFixed(4)} positive={null} />
+                <GreekBadge label="Vega" value={greeks.vega.toFixed(2)} positive={null} />
+              </div>
+            </div>
+          )}
+          {/* Leg details */}
+          {entry.legs?.length > 0 && (
+            <div className="border-t border-border pt-1.5">
+              <div className="text-[10px] text-muted-foreground mb-1 font-medium">Legs</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
+                {entry.legs.map((leg, i) => (
+                  <span key={i} className={leg.action === "sell" ? "text-emerald-400/80" : "text-red-400/80"}>
+                    {leg.action === "sell" ? "Sell" : "Buy"} {leg.strikePrice} {leg.contractType.charAt(0).toUpperCase()} @ {fmt$(leg.midpoint)} (Δ{leg.delta.toFixed(2)} Θ{leg.theta.toFixed(3)})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {entry.notes && (
             <div className="text-muted-foreground border-t border-border pt-1.5 whitespace-pre-wrap">{entry.notes}</div>
           )}
@@ -912,7 +1046,8 @@ function ClosedTradeRow({ entry, onDelete, onEdit }: { entry: JournalEntry; onDe
             </Button>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

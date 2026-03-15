@@ -528,7 +528,8 @@ export const storage = {
 
   getPortfolioGreeks(): {
     totalDelta: number; totalTheta: number; totalGamma: number; totalVega: number;
-    positions: { ticker: string; strategyType: string; contracts: number; delta: number; theta: number; gamma: number; vega: number; daysToExpiration: number }[];
+    avgPOP: number;
+    positions: { ticker: string; strategyType: string; contracts: number; delta: number; theta: number; gamma: number; vega: number; daysToExpiration: number; pop: number; entryCredit: number; maxLoss: number; ivRankAtEntry: number | null; compositeScore: number | null }[];
     bySector: Record<string, { delta: number; theta: number; count: number }>;
   } {
     const open = this.getJournalEntries('open');
@@ -543,6 +544,15 @@ export const storage = {
       }
       const expDate = new Date(e.expirationDate);
       const dte = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / 86400000));
+
+      // Compute POP from short leg deltas
+      const sellLegs = e.legs.filter(l => l.action === 'sell');
+      let pop = 0;
+      if (sellLegs.length > 0) {
+        const avgShortDelta = sellLegs.reduce((s, l) => s + Math.abs(l.delta), 0) / sellLegs.length;
+        pop = (1 - avgShortDelta) * 100;
+      }
+
       return {
         ticker: e.ticker,
         strategyType: e.strategyType,
@@ -552,6 +562,11 @@ export const storage = {
         gamma: +gamma.toFixed(4),
         vega: +vega.toFixed(2),
         daysToExpiration: dte,
+        pop: +pop.toFixed(1),
+        entryCredit: e.entryCredit,
+        maxLoss: e.maxLoss,
+        ivRankAtEntry: e.ivRankAtEntry,
+        compositeScore: e.compositeScoreAtEntry,
       };
     });
 
@@ -559,6 +574,12 @@ export const storage = {
     const totalTheta = +positions.reduce((s, p) => s + p.theta, 0).toFixed(2);
     const totalGamma = +positions.reduce((s, p) => s + p.gamma, 0).toFixed(4);
     const totalVega = +positions.reduce((s, p) => s + p.vega, 0).toFixed(2);
+
+    // Weighted average POP (weighted by contract count)
+    const totalContracts = positions.reduce((s, p) => s + p.contracts, 0);
+    const avgPOP = totalContracts > 0
+      ? +(positions.reduce((s, p) => s + p.pop * p.contracts, 0) / totalContracts).toFixed(1)
+      : 0;
 
     // Group by ticker for a pseudo-sector view
     const bySector: Record<string, { delta: number; theta: number; count: number }> = {};
@@ -569,7 +590,7 @@ export const storage = {
       bySector[p.ticker].count++;
     }
 
-    return { totalDelta, totalTheta, totalGamma, totalVega, positions, bySector };
+    return { totalDelta, totalTheta, totalGamma, totalVega, avgPOP, positions, bySector };
   },
 
   getJournalStats(): JournalStats {
