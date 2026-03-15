@@ -67,10 +67,10 @@ export default function AuthPage() {
           </div>
 
           <h2 className="text-3xl font-bold mb-3 leading-tight">
-            Find the highest-probability<br />options trades, daily.
+            Scan options strategies<br />across 500+ tickers, daily.
           </h2>
           <p className="text-zinc-400 text-lg mb-10">
-            Sell premium with confidence. Our scanner analyzes 500+ tickers every morning and ranks trades by composite score.
+            Analyze premium-selling opportunities. Our scanner evaluates 500+ tickers every morning and ranks strategies by composite score.
           </p>
 
           <div className="grid grid-cols-2 gap-4">

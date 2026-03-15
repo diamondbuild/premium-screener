@@ -488,7 +488,7 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/pick-of-day — returns the single strongest trade (A+ signal)
+  // GET /api/pick-of-day — returns the single strongest trade (A+ score)
   app.get("/api/pick-of-day", async (_req, res) => {
     try {
       // Get all current scan results
@@ -550,8 +550,8 @@ export async function registerRoutes(
       parts.push(`${(pick.probabilityOfProfit * 100).toFixed(0)}% POP`);
       parts.push(`${pick.annualizedROC.toFixed(0)}% annualized ROC`);
       if (ivr != null && ivr >= 50) parts.push(`IVR ${Math.round(ivr)} (elevated)`);
-      if (winRate != null) parts.push(`${(winRate * 100).toFixed(0)}% historical win rate`);
-      const reason = `Top signal — ${parts.join(", ")}.`;
+      if (winRate != null) parts.push(`${(winRate * 100).toFixed(0)}% backtest success rate`);
+      const reason = `Top ranked — ${parts.join(", ")}.`;
 
       res.json({
         pick,
@@ -564,7 +564,7 @@ export async function registerRoutes(
       });
     } catch (err) {
       console.error("Pick of day error:", err);
-      res.status(500).json({ error: "Failed to compute pick of the day" });
+      res.status(500).json({ error: "Failed to compute top ranked setup" });
     }
   });
 

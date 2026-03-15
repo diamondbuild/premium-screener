@@ -1780,14 +1780,14 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mb-3">
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30">
                       <Award className="w-3.5 h-3.5 text-amber-500" />
-                      <span className="text-xs font-bold text-amber-600 dark:text-amber-400">PICK OF THE DAY</span>
+                      <span className="text-xs font-bold text-amber-600 dark:text-amber-400">TOP RANKED TODAY</span>
                     </div>
                     <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-xs" variant="outline">
-                      A+ Signal
+                      A+ Score
                     </Badge>
                     {pickData.alternates && pickData.alternates > 0 && (
                       <span className="text-[10px] text-muted-foreground ml-auto">
-                        +{pickData.alternates} other A+ trade{pickData.alternates > 1 ? "s" : ""}
+                        +{pickData.alternates} other A+ setup{pickData.alternates > 1 ? "s" : ""}
                       </span>
                     )}
                   </div>
@@ -1824,7 +1824,7 @@ export default function Dashboard() {
                       </div>
                       {pickData.winRate != null && (
                         <div className="text-xs text-muted-foreground">
-                          {(pickData.winRate * 100).toFixed(0)}% historical win rate
+                          {(pickData.winRate * 100).toFixed(0)}% backtest success rate
                         </div>
                       )}
                     </div>
@@ -1864,10 +1864,10 @@ export default function Dashboard() {
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted border border-border">
                     <Award className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-muted-foreground">PICK OF THE DAY</span>
+                    <span className="text-xs font-semibold text-muted-foreground">TOP RANKED TODAY</span>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {pickData.message || "No top pick today"}
+                    {pickData.message || "No top-ranked setup today"}
                   </span>
                 </div>
               )}
@@ -1893,7 +1893,7 @@ export default function Dashboard() {
           <KPICard icon={DollarSign} label="Avg Ann. ROC" value={isRedactedData ? "Premium" : fmtPct(avgROC)} sub="Across all trades" color="text-profit" />
           <KPICard icon={Shield} label="Avg POP" value={isRedactedData ? "Premium" : fmtPct(avgPOP)} sub="Win probability" color="text-chart-1" />
           <KPICard icon={Zap} label="Avg Delta Z" value={isRedactedData ? "Premium" : avgDZ.toFixed(1) + "σ"} sub="Above recent avg" color="text-chart-3" />
-          <KPICard icon={Target} label="Total Trades" value={isRedactedData ? "Premium" : totalTradeCount.toLocaleString()} sub="Trade ideas found" color="text-chart-4" />
+          <KPICard icon={Target} label="Total Setups" value={isRedactedData ? "Premium" : totalTradeCount.toLocaleString()} sub="Opportunities found" color="text-chart-4" />
         </div>
 
         {/* Strategy Summary Cards */}
@@ -2003,8 +2003,8 @@ export default function Dashboard() {
               Annualized ROC (25 pts) = net credit / max risk, annualized.
               POP (25 pts) from delta-based estimation.
               Liquidity (15 pts) from volume/OI ratio.
-              IVR bonus (+10 pts) when IVR ≥ 50. Win Rate bonus (+10 pts) when historical backtest ≥ 60%.
-              A+ signal = score ≥ 75. Click any card to expand. Star to add to watchlist.
+              IVR bonus (+10 pts) when IVR ≥ 50. Backtest bonus (+10 pts) when historical backtest ≥ 60%.
+              A+ score = score ≥ 75. Click any card to expand. Star to add to watchlist.
             </div>
           </div>
         </Card>
@@ -2014,7 +2014,7 @@ export default function Dashboard() {
           <Card className="p-3" data-testid="strategy-insights">
             <div className="flex items-center gap-2 mb-2">
               <PieChart className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-semibold">Historical Win Rates</span>
+              <span className="text-xs font-semibold">Historical Backtest Performance</span>
               <span className="text-[10px] text-muted-foreground ml-auto">
                 {insightsData.totalBacktestEntries} backtests across {insightsData.backtest.reduce((s, b) => s + b.tickersBacktested, 0)} tickers
               </span>
@@ -2065,12 +2065,12 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* All Trade Ideas */}
+        {/* All Ranked Opportunities */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <BarChart3 className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-semibold">
-              {STRATEGY_LABELS[strategy]} Trade Ideas
+              {STRATEGY_LABELS[strategy]} Opportunities
             </h2>
             <span className="text-xs text-muted-foreground tabular-nums">
               {sortedResults.length} trades

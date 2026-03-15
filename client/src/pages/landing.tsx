@@ -189,7 +189,7 @@ function MockDashboardFull() {
                 <span className="text-[10px] text-zinc-500">{s.count} trades</span>
               </div>
               <div className="text-xs text-zinc-400">{s.name}</div>
-              <div className="text-xs text-zinc-500 mt-1">Win rate: <span className="text-emerald-400 font-medium">{s.winRate}</span></div>
+              <div className="text-xs text-zinc-500 mt-1">Backtest: <span className="text-emerald-400 font-medium">{s.winRate}</span></div>
             </div>
           ))}
         </div>
@@ -266,17 +266,17 @@ export default function LandingPage() {
     { icon: Shield, title: "5 Premium Strategies", desc: "Cash Secured Puts, Put Credit Spreads, Call Credit Spreads, Strangles, Iron Condors. Each optimized for premium sellers." },
     { icon: Activity, title: "Delta Z-Score Ranking", desc: "Our proprietary scoring measures how rich current premiums are vs. the chain average. Higher Z = fatter premium." },
     { icon: TrendingUp, title: "IV Rank & Earnings Integration", desc: "Know instantly if IV is elevated (ideal for selling) and whether earnings fall before expiry." },
-    { icon: Clock, title: "One-Click Backtesting", desc: "Simulate any trade over 3, 6, or 12 months of price history. See win rate, P&L curve, Sharpe ratio." },
+    { icon: Clock, title: "One-Click Backtesting", desc: "Simulate any strategy over 3, 6, or 12 months of price history. See backtest results, P&L curve, Sharpe ratio." },
     { icon: LineChart, title: "Interactive P&L Diagrams", desc: "Visualize max profit, max loss, breakevens, and expected move for every trade at a glance." },
-    { icon: BookOpen, title: "Trade Journal & Performance", desc: "Log positions, track P&L, see your win rate by strategy. Know what's actually working." },
+    { icon: BookOpen, title: "Trade Journal & Performance", desc: "Log positions, track P&L, see your backtest performance by strategy. Know what's actually working." },
     { icon: Bell, title: "Watchlist & Custom Alerts", desc: "Pin your favorite tickers. Get notified when they score above your threshold." },
-    { icon: Star, title: "Historical Win Rates", desc: "See real backtest-based win rates across all strategies. Our Put Credit Spreads show 80%+ historically." },
+    { icon: Star, title: "Backtest Performance", desc: "See real backtest-based statistics across all strategies. Evaluate how each approach has performed historically." },
   ];
 
   const faqs = [
     { q: "What strategies does it cover?", a: "Cash Secured Puts (CSPs), Put Credit Spreads (PCS), Call Credit Spreads (CCS), Strangles, and Iron Condors \u2014 five core premium-selling strategies covering both bullish and bearish credit plays." },
-    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (30%), Annualized ROC (20%), Probability of Profit (20%), and Liquidity (10%), plus bonus points for high IV Rank (+10 when IVR \u2265 50) and strong historical win rate (+10 when backtest \u2265 60%)." },
-    { q: "How often is data updated?", a: "Every trading day. Scans run during market hours so you get fresh ranked trade ideas by market open." },
+    { q: "How is the composite score calculated?", a: "It's a weighted blend of Delta Z-Score (30%), Annualized ROC (20%), Probability of Profit (20%), and Liquidity (10%), plus bonus points for high IV Rank (+10 when IVR \u2265 50) and strong backtest performance (+10 when historical backtest \u2265 60%)." },
+    { q: "How often is data updated?", a: "Every trading day. Scans run during market hours so you get fresh ranked opportunities by market open." },
     { q: "Can I try it for free?", a: "Yes. Create a free account to see limited results with some details redacted. Upgrade anytime to unlock everything." },
     { q: "What's your refund policy?", a: "Cancel anytime, no questions asked. You keep access through the end of your billing period." },
   ];
@@ -308,7 +308,7 @@ export default function LandingPage() {
               Stop Guessing.<br /><span className="text-emerald-400">Start Screening.</span>
             </h1>
             <p className={`text-base md:text-lg text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-8 ${fadeInUp}`} style={{ animationDelay: "200ms" }}>
-              Our engine scans 500+ S&P 500 + NASDAQ 100 tickers every morning and ranks the highest-probability options trades by composite score.
+              Our engine scans 500+ S&P 500 + NASDAQ 100 tickers every morning and ranks options strategies by composite score — so you spend less time scanning chains.
             </p>
             <div className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-5 ${fadeInUp}`} style={{ animationDelay: "300ms" }}>
               <Link href="/auth"><Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 px-8 w-full sm:w-auto" data-testid="button-hero-cta">Start Free Preview <ArrowRight className="w-4 h-4 ml-1" /></Button></Link>
@@ -335,7 +335,7 @@ export default function LandingPage() {
             {[
               { step: "01", icon: Crosshair, title: "We Scan", desc: "Every trading day, our engine analyzes options chains across the S&P 500 + NASDAQ 100 — every expiry, every strike." },
               { step: "02", icon: BarChart3, title: "We Score", desc: "Each trade is ranked by a composite of Delta Z-Score, Annualized ROC, Probability of Profit, and Liquidity." },
-              { step: "03", icon: Target, title: "You Trade", desc: "Get ranked trade ideas with full leg details, P&L diagrams, and backtesting. Enter with confidence." },
+              { step: "03", icon: Target, title: "You Decide", desc: "Get ranked opportunities with full leg details, P&L diagrams, and backtesting. Evaluate with confidence." },
             ].map((s, i) => (
               <AnimatedSection key={s.step} delay={i * 150}>
                 <Card className="bg-zinc-900/50 border-zinc-800 p-6 md:p-8 h-full">
@@ -354,7 +354,7 @@ export default function LandingPage() {
 
       <section id="features" className="relative py-20 md:py-28 px-4">
         <div className="max-w-5xl mx-auto">
-          <AnimatedSection><div className="text-center mb-14"><h2 className="text-2xl md:text-3xl font-bold text-white mb-3">Built for Premium Sellers</h2><p className="text-zinc-400 text-sm md:text-base">Every feature designed to find, evaluate, and execute high-probability premium trades.</p></div></AnimatedSection>
+          <AnimatedSection><div className="text-center mb-14"><h2 className="text-2xl md:text-3xl font-bold text-white mb-3">Built for Premium Sellers</h2><p className="text-zinc-400 text-sm md:text-base">Every feature designed to find, evaluate, and analyze options strategies for selling premium.</p></div></AnimatedSection>
           <div className="grid md:grid-cols-2 gap-4 md:gap-5">
             {features.map((f, i) => (
               <AnimatedSection key={f.title} delay={(i % 2) * 100}>
@@ -381,9 +381,9 @@ export default function LandingPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
               {[
                 { value: "500+", label: "Tickers Scanned Daily" },
-                { value: "2,600+", label: "Trade Ideas Generated" },
-                { value: "80%+", label: "Historical Win Rate (PCS)" },
-                { value: "90%+", label: "Historical Win Rate (IC)" },
+                { value: "2,600+", label: "Strategies Analyzed Daily" },
+                { value: "80%+", label: "Backtest Success Rate (PCS)*" },
+                { value: "90%+", label: "Backtest Success Rate (IC)*" },
               ].map((stat) => (
                 <div key={stat.label} className="text-center">
                   <div className="text-3xl md:text-5xl font-bold text-emerald-400 tabular-nums mb-2">{stat.value}</div>
@@ -433,24 +433,63 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
         <div className="max-w-2xl mx-auto text-center relative">
           <AnimatedSection>
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Ready to find better trades?</h2>
-            <p className="text-zinc-400 mb-8">Join traders who save hours every day with systematic, data-driven premium selling.</p>
+            <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Ready to screen smarter?</h2>
+            <p className="text-zinc-400 mb-8">Join investors who save hours every day with systematic, data-driven options analytics.</p>
             <Link href="/auth"><Button size="lg" className="bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 px-8" data-testid="button-final-cta">Start Free Preview <ArrowRight className="w-4 h-4 ml-1" /></Button></Link>
           </AnimatedSection>
         </div>
       </section>
 
       <footer className="border-t border-zinc-800/50 py-10 px-4">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-2.5"><Logo className="h-6 w-6" /><span className="text-sm font-medium text-zinc-300">Premium Screener</span></div>
-          <div className="flex items-center gap-6 text-sm text-zinc-500">
-            <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-in">Sign In</span></Link>
-            <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-up">Sign Up</span></Link>
-            <button onClick={() => scrollTo("pricing")} className="hover:text-zinc-300 transition-colors" data-testid="link-footer-pricing">Pricing</button>
+        <div className="max-w-5xl mx-auto">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
+            <div className="flex items-center gap-2.5"><Logo className="h-6 w-6" /><span className="text-sm font-medium text-zinc-300">Premium Screener</span></div>
+            <div className="flex items-center gap-6 text-sm text-zinc-500">
+              <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-in">Sign In</span></Link>
+              <Link href="/auth"><span className="hover:text-zinc-300 transition-colors cursor-pointer" data-testid="link-footer-sign-up">Sign Up</span></Link>
+              <button onClick={() => scrollTo("pricing")} className="hover:text-zinc-300 transition-colors" data-testid="link-footer-pricing">Pricing</button>
+            </div>
           </div>
-          <div className="flex flex-col items-center md:items-end gap-2 text-xs text-zinc-600"><span>© 2026 Premium Screener. Not financial advice.</span></div>
+
+          {/* Legal & Compliance — visible to payment processor crawlers */}
+          <div className="border-t border-zinc-800/50 pt-8 space-y-6 text-xs text-zinc-500 leading-relaxed">
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-zinc-300 font-semibold mb-2 text-sm">About PremiumScreener</h4>
+                <p>PremiumScreener is a subscription SaaS platform that provides options analytics tools and research software for investors. The platform scans publicly available options market data and ranks strategies using statistical metrics such as probability of profit, implied volatility, and risk-adjusted return. We do not execute trades, manage funds, or provide brokerage or financial advisory services.</p>
+              </div>
+              <div>
+                <h4 className="text-zinc-300 font-semibold mb-2 text-sm">Contact &amp; Support</h4>
+                <p>Email: support@premiumscreener.com</p>
+                <p className="mt-2">PremiumScreener is operated as a software analytics business providing research tools to self-directed investors.</p>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="text-zinc-300 font-semibold mb-2 text-sm">Terms of Service</h4>
+                <p>By using PremiumScreener, you agree that the platform provides analytics software only. All content is for educational and informational purposes. You acknowledge that options trading involves significant risk of loss and that you are solely responsible for your own investment decisions. All analytics models, scoring systems, and proprietary methodologies are the exclusive intellectual property of PremiumScreener and may not be copied, reproduced, or reverse engineered.</p>
+              </div>
+              <div>
+                <h4 className="text-zinc-300 font-semibold mb-2 text-sm">Privacy Policy</h4>
+                <p>We collect only the information necessary to provide the service: email address and payment information (processed securely by Stripe). We do not sell or share your personal data with third parties. Usage data is collected to improve the platform. You may request deletion of your account and data at any time by contacting support.</p>
+              </div>
+              <div>
+                <h4 className="text-zinc-300 font-semibold mb-2 text-sm">Refund Policy</h4>
+                <p>Cancel anytime, no questions asked. You retain access through the end of your current billing period. No partial refunds are issued for unused time within a billing cycle. If you experience a technical issue preventing access, contact support and we will resolve it promptly.</p>
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-800/50 pt-6">
+              <p className="font-semibold text-zinc-400 mb-1">Risk Disclaimer</p>
+              <p>Backtested performance is hypothetical and provided for informational purposes only. Past performance, whether simulated or historical, does not guarantee future results. Options trading involves substantial risk of loss and is not suitable for all investors. PremiumScreener does not provide financial, investment, or trading advice. Consult a qualified financial advisor before making investment decisions.</p>
+            </div>
+          </div>
+
+          <div className="text-center text-xs text-zinc-600 mt-8">
+            <span>&copy; {new Date().getFullYear()} PremiumScreener. All rights reserved.</span>
+          </div>
         </div>
-        <Disclaimer />
       </footer>
 
       <style>{`
