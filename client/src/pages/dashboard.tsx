@@ -1791,8 +1791,8 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div className="flex items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         <span className="text-lg font-bold">{pickData.pick.underlyingTicker}</span>
                         <Badge className={`text-xs ${STRATEGY_COLORS[pickData.pick.strategyType] || ""}`}>
                           {STRATEGY_SHORT[pickData.pick.strategyType]}
@@ -1803,10 +1803,43 @@ export default function Dashboard() {
                             IVR {Math.round(pickData.pick.ivRank)}
                           </Badge>
                         )}
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(pickData.pick.expirationDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          <span className="text-[10px]">({pickData.pick.daysToExpiration} DTE)</span>
+                        </span>
                       </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-xs text-muted-foreground leading-relaxed mb-2">
                         {pickData.reason}
                       </p>
+                      {/* Legs breakdown */}
+                      {pickData.pick.legs && pickData.pick.legs.length > 0 && (
+                        <div className="rounded-md bg-muted/40 border border-border/50 p-2.5 space-y-1.5">
+                          {pickData.pick.legs.map((leg, i) => {
+                            const isSell = leg.action === "sell";
+                            return (
+                              <div key={i} className="flex items-center gap-2 text-xs tabular-nums font-mono">
+                                <span className={`font-semibold w-8 ${isSell ? "text-emerald-500" : "text-muted-foreground"}`}>
+                                  {isSell ? "Sell" : "Buy"}
+                                </span>
+                                <span className="font-medium text-foreground">{fmt$(leg.strikePrice)}</span>
+                                <span className="text-muted-foreground">{leg.contractType === "put" ? "Put" : "Call"}</span>
+                                <span className="text-muted-foreground">@</span>
+                                <span className={isSell ? "text-emerald-500" : "text-muted-foreground"}>{fmt$(leg.midpoint)}</span>
+                                <span className="text-muted-foreground text-[10px]">({"\u0394"} {leg.delta.toFixed(2)})</span>
+                              </div>
+                            );
+                          })}
+                          <div className="flex items-center gap-3 pt-1.5 border-t border-border/50 text-xs tabular-nums">
+                            <span className="font-semibold text-emerald-500">
+                              Net Credit: {fmt$(pickData.pick.netCredit)}
+                            </span>
+                            <span className="text-muted-foreground">
+                              Max Loss: {pickData.pick.maxLoss === -999999 ? "Undef." : fmt$(Math.abs(pickData.pick.maxLoss))}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <div className="text-2xl font-bold tabular-nums">{pickData.pick.compositeScore.toFixed(0)}</div>
