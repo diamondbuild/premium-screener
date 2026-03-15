@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { setupStripe } from "./stripe";
 import { serveStatic } from "./static";
+import { serveBotLanding } from "./bot-landing";
 import { createServer } from "http";
 
 const app = express();
@@ -84,6 +85,10 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
+  // Bot landing page middleware — serves static HTML to crawlers/bots
+  // Must be registered BEFORE serveStatic so bots get the static page
+  app.use(serveBotLanding);
+
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
