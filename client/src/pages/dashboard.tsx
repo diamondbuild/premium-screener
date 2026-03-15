@@ -1812,36 +1812,6 @@ export default function Dashboard() {
                       <p className="text-xs text-muted-foreground leading-relaxed mb-2">
                         {pickData.reason}
                       </p>
-                      {/* Legs breakdown */}
-                      {pickData.pick.legs && pickData.pick.legs.length > 0 && (
-                        <div className="w-full rounded-lg bg-muted/40 border border-border/50 p-3 space-y-1.5 overflow-hidden">
-                          {pickData.pick.legs.map((leg, i) => {
-                            const isSell = leg.action === "sell";
-                            return (
-                              <div key={i} className="text-xs tabular-nums font-mono truncate">
-                                <span className={`inline-block w-8 font-semibold ${isSell ? "text-emerald-500" : "text-muted-foreground"}`}>
-                                  {isSell ? "Sell" : "Buy"}
-                                </span>
-                                <span className="font-medium text-foreground">{fmt$(leg.strikePrice)}</span>
-                                {" "}
-                                <span className="text-muted-foreground">{leg.contractType === "put" ? "Put" : "Call"}</span>
-                                {" @ "}
-                                <span className={isSell ? "text-emerald-500" : "text-muted-foreground"}>{fmt$(leg.midpoint)}</span>
-                                {"  "}
-                                <span className="text-muted-foreground text-[10px]">({"\u0394"} {leg.delta.toFixed(2)})</span>
-                              </div>
-                            );
-                          })}
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-border/50 text-xs tabular-nums">
-                            <span className="font-semibold text-emerald-500">
-                              Net Credit: {fmt$(pickData.pick.netCredit)}
-                            </span>
-                            <span className="text-muted-foreground">
-                              Max Loss: {pickData.pick.maxLoss === -999999 ? "Undef." : fmt$(Math.abs(pickData.pick.maxLoss))}
-                            </span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <div className="text-2xl font-bold tabular-nums">{pickData.pick.compositeScore.toFixed(0)}</div>
@@ -1858,6 +1828,36 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
+                  {/* Legs breakdown */}
+                  {pickData.pick.legs && pickData.pick.legs.length > 0 && (
+                    <div className="w-full rounded-lg bg-muted/40 border border-border/50 p-3 space-y-1.5 overflow-hidden">
+                      {pickData.pick.legs.map((leg, i) => {
+                        const isSell = leg.action === "sell";
+                        return (
+                          <div key={i} className="text-xs tabular-nums font-mono truncate">
+                            <span className={`inline-block w-8 font-semibold ${isSell ? "text-emerald-500" : "text-muted-foreground"}`}>
+                              {isSell ? "Sell" : "Buy"}
+                            </span>
+                            <span className="font-medium text-foreground">{fmt$(leg.strikePrice)}</span>
+                            {" "}
+                            <span className="text-muted-foreground">{leg.contractType === "put" ? "Put" : "Call"}</span>
+                            {" @ "}
+                            <span className={isSell ? "text-emerald-500" : "text-muted-foreground"}>{fmt$(leg.midpoint)}</span>
+                            {"  "}
+                            <span className="text-muted-foreground text-[10px]">({"\u0394"} {leg.delta.toFixed(2)})</span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 border-t border-border/50 text-xs tabular-nums">
+                        <span className="font-semibold text-emerald-500">
+                          Net Credit: {fmt$(pickData.pick.netCredit)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          Max Loss: {pickData.pick.maxLoss === -999999 ? "Undef." : fmt$(Math.abs(pickData.pick.maxLoss))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex items-center gap-3">
